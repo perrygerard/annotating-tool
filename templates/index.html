@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Annotation Remapper</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ink: #1a1a2e;
+      --ink-mid: #3d3d5c;
+      --ink-light: #7070a0;
+      --bg: #f5f4f0;
+      --surface: #ffffff;
+      --accent: #4a6fa5;
+      --accent-dark: #2e4d7a;
+      --accent-light: #e8eef7;
+      --success: #2d7a4f;
+      --success-bg: #e8f5ee;
+      --warn: #b45309;
+      --warn-bg: #fef3c7;
+      --error: #c0392b;
+      --error-bg: #fdf0ee;
+      --border: #dddde8;
+      --radius: 10px;
+      --shadow: 0 2px 12px rgba(26,26,46,0.08);
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--ink);
+      color: white;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header svg { flex-shrink: 0; }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    header p {
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.55);
+      margin-top: 1px;
+    }
+
+    main {
+      flex: 1;
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 40px 24px 60px;
+      width: 100%;
+    }
+
+    .intro {
+      margin-bottom: 32px;
+    }
+
+    .intro h2 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .intro p {
+      font-size: 0.9rem;
+      color: var(--ink-mid);
+      line-height: 1.6;
+    }
+
+    .steps {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      color: var(--ink-light);
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+    }
+
+    .step-num {
+      background: var(--accent);
+      color: white;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px;
+      margin-bottom: 20px;
+    }
+
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 520px) {
+      .upload-grid { grid-template-columns: 1fr; }
+    }
+
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-light);
+    }
+
+    .upload-zone.has-file {
+      border-color: var(--success);
+      background: var(--success-bg);
+    }
+
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-icon {
+      width: 36px;
+      height: 36px;
+      margin: 0 auto 10px;
+      color: var(--ink-light);
+    }
+
+    .upload-zone.has-file .upload-icon { color: var(--success); }
+
+    .upload-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--ink-mid);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+
+    .upload-hint {
+      font-size: 0.78rem;
+      color: var(--ink-light);
+    }
+
+    .upload-filename {
+      font-size: 0.78rem;
+      color: var(--success);
+      font-weight: 600;
+      margin-top: 6px;
+      word-break: break-all;
+    }
+
+    .arrow-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--ink-light);
+      font-size: 1.4rem;
+      align-self: center;
+    }
+
+    .submit-btn {
+      display: block;
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      letter-spacing: -0.01em;
+    }
+
+    .submit-btn:hover:not(:disabled) { background: var(--accent-dark); }
+    .submit-btn:active:not(:disabled) { transform: scale(0.99); }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Progress */
+    #progress-card { display: none; }
+
+    .progress-bar-wrap {
+      background: var(--border);
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.4s ease;
+      animation: progress-pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes progress-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .progress-status {
+      font-size: 0.85rem;
+      color: var(--ink-mid);
+      text-align: center;
+    }
+
+    /* Results */
+    #results-card { display: none; }
+
+    .results-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .stat {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-size: 1.8rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--ink-light);
+      margin-top: 4px;
+    }
+
+    .stat.matched .stat-num { color: var(--success); }
+    .stat.unmatched .stat-num { color: var(--warn); }
+    .stat.total .stat-num { color: var(--ink); }
+
+    .download-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 14px;
+      background: var(--success);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s;
+      margin-bottom: 16px;
+    }
+
+    .download-btn:hover { background: #235e3c; }
+
+    .annotation-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+
+    .annotation-table th {
+      text-align: left;
+      padding: 8px 10px;
+      color: var(--ink-light);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.68rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .annotation-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      color: var(--ink-mid);
+    }
+
+    .annotation-table tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+
+    .badge.matched { background: var(--success-bg); color: var(--success); }
+    .badge.unmatched { background: var(--warn-bg); color: var(--warn); }
+
+    details summary {
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: var(--ink-light);
+      padding: 8px 0 0;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    details summary::-webkit-details-marker { display: none; }
+    details[open] summary { color: var(--ink-mid); }
+
+    .chevron {
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+
+    details[open] .chevron { transform: rotate(180deg); }
+
+    /* Error */
+    .error-box {
+      background: var(--error-bg);
+      color: var(--error);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 0.85rem;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .reset-btn {
+      display: block;
+      width: 100%;
+      margin-top: 12px;
+      padding: 10px;
+      background: transparent;
+      color: var(--ink-mid);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .reset-btn:hover { background: var(--bg); }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+    <rect width="28" height="28" rx="6" fill="rgba(255,255,255,0.12)"/>
+    <rect x="6" y="5" width="12" height="16" rx="1.5" stroke="white" stroke-width="1.5" fill="none"/>
+    <line x1="9" y1="9" x2="15" y2="9" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="9" y1="12" x2="15" y2="12" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="9" y1="15" x2="12" y2="15" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    <circle cx="20" cy="20" r="5" fill="#4a6fa5" stroke="white" stroke-width="1.5"/>
+    <path d="M18.5 20h3M20 18.5v3" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+  </svg>
+  <div>
+    <h1>PDF Annotation Remapper</h1>
+    <p>Automatically move annotations when a PDF gets updated</p>
+  </div>
+</header>
+
+<main>
+  <div class="intro">
+    <h2>Remap annotations to a new PDF version</h2>
+    <p>Upload your annotated PDF and the new updated version. The tool finds where each annotated element moved and repositions all callouts automatically.</p>
+    <div class="steps">
+      <div class="step"><span class="step-num">1</span> Upload the annotated PDF</div>
+      <div class="step"><span class="step-num">2</span> Upload the new updated PDF</div>
+      <div class="step"><span class="step-num">3</span> Download the remapped result</div>
+    </div>
+  </div>
+
+  <div class="card" id="upload-card">
+    <div class="upload-grid">
+      <div class="upload-zone" id="zone-annotated">
+        <input type="file" id="input-annotated" accept=".pdf" />
+        <div class="upload-icon">
+          <svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <rect x="6" y="3" width="18" height="24" rx="2"/>
+            <path d="M12 10h8M12 14h8M12 18h5"/>
+            <circle cx="22" cy="22" r="5" fill="white" stroke="currentColor"/>
+            <path d="M20.5 22h3M22 20.5v3" stroke-width="1.4"/>
+          </svg>
+        </div>
+        <div class="upload-label">Annotated PDF</div>
+        <div class="upload-hint">The PDF with existing callouts</div>
+        <div class="upload-filename" id="name-annotated"></div>
+      </div>
+
+      <div class="upload-zone" id="zone-new">
+        <input type="file" id="input-new" accept=".pdf" />
+        <div class="upload-icon">
+          <svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <rect x="6" y="3" width="18" height="24" rx="2"/>
+            <path d="M12 10h8M12 14h8M12 18h5"/>
+            <path d="M24 20l3 3-3 3" stroke-width="1.6"/>
+            <path d="M20 23h7" stroke-width="1.6"/>
+          </svg>
+        </div>
+        <div class="upload-label">New Updated PDF</div>
+        <div class="upload-hint">The revised PDF without annotations</div>
+        <div class="upload-filename" id="name-new"></div>
+      </div>
+    </div>
+
+    <div class="error-box" id="error-box"></div>
+
+    <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">
+      Remap Annotations →
+    </button>
+  </div>
+
+  <div class="card" id="progress-card">
+    <div class="progress-status" id="progress-status">Processing your PDFs…</div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar" style="width: 30%"></div>
+    </div>
+    <div class="progress-status" style="font-size:0.75rem; color: var(--ink-light)">
+      Analyzing content and matching annotation positions
+    </div>
+  </div>
+
+  <div class="card" id="results-card">
+    <div class="results-summary">
+      <div class="stat total">
+        <div class="stat-num" id="stat-total">0</div>
+        <div class="stat-label">Total</div>
+      </div>
+      <div class="stat matched">
+        <div class="stat-num" id="stat-matched">0</div>
+        <div class="stat-label">Matched</div>
+      </div>
+      <div class="stat unmatched">
+        <div class="stat-num" id="stat-unmatched">0</div>
+        <div class="stat-label">Review needed</div>
+      </div>
+    </div>
+
+    <a class="download-btn" id="download-btn" href="#" onclick="downloadResult(event)">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+        <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
+      </svg>
+      Download Remapped PDF
+    </a>
+
+    <details>
+      <summary>
+        <svg class="chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 5l4 4 4-4"/>
+        </svg>
+        View annotation details
+      </summary>
+      <div style="margin-top:12px; overflow-x:auto;">
+        <table class="annotation-table" id="annotation-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Page</th>
+              <th>Content preview</th>
+              <th>Status</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody id="annotation-tbody"></tbody>
+        </table>
+      </div>
+    </details>
+
+    <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
+  </div>
+</main>
+
+<script>
+  let currentJobId = null;
+  let pollInterval = null;
+  let progressVal = 30;
+
+  const inputAnnotated = document.getElementById('input-annotated');
+  const inputNew = document.getElementById('input-new');
+  const submitBtn = document.getElementById('submit-btn');
+
+  function setupZone(inputEl, zoneId, nameId) {
+    const zone = document.getElementById(zoneId);
+    const nameEl = document.getElementById(nameId);
+
+    inputEl.addEventListener('change', () => {
+      if (inputEl.files[0]) {
+        zone.classList.add('has-file');
+        nameEl.textContent = inputEl.files[0].name;
+      }
+      checkReady();
+    });
+
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file && file.name.endsWith('.pdf')) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        inputEl.files = dt.files;
+        zone.classList.add('has-file');
+        nameEl.textContent = file.name;
+        checkReady();
+      }
+    });
+  }
+
+  setupZone(inputAnnotated, 'zone-annotated', 'name-annotated');
+  setupZone(inputNew, 'zone-new', 'name-new');
+
+  function checkReady() {
+    submitBtn.disabled = !(inputAnnotated.files[0] && inputNew.files[0]);
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('error-box');
+    box.textContent = msg;
+    box.style.display = 'block';
+  }
+
+  function hideError() {
+    document.getElementById('error-box').style.display = 'none';
+  }
+
+  async function submitJob() {
+    hideError();
+    const formData = new FormData();
+    formData.append('annotated_pdf', inputAnnotated.files[0]);
+    formData.append('new_pdf', inputNew.files[0]);
+
+    document.getElementById('upload-card').style.display = 'none';
+    document.getElementById('progress-card').style.display = 'block';
+    progressVal = 30;
+    animateProgress();
+
+    try {
+      const res = await fetch('/remap', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) { showUploadError(data.error); return; }
+      currentJobId = data.job_id;
+      startPolling();
+    } catch (e) {
+      showUploadError('Upload failed. Please try again.');
+    }
+  }
+
+  function showUploadError(msg) {
+    document.getElementById('progress-card').style.display = 'none';
+    document.getElementById('upload-card').style.display = 'block';
+    showError(msg);
+  }
+
+  function animateProgress() {
+    const bar = document.getElementById('progress-bar');
+    const timer = setInterval(() => {
+      if (progressVal < 85) {
+        progressVal += Math.random() * 6;
+        bar.style.width = progressVal + '%';
+      } else {
+        clearInterval(timer);
+      }
+    }, 600);
+  }
+
+  function startPolling() {
+    pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/status/' + currentJobId);
+        const data = await res.json();
+        if (data.status === 'done') {
+          clearInterval(pollInterval);
+          document.getElementById('progress-bar').style.width = '100%';
+          setTimeout(() => showResults(data.results), 400);
+        } else if (data.status === 'error') {
+          clearInterval(pollInterval);
+          showUploadError('Processing error: ' + data.message);
+        }
+      } catch (e) { /* keep polling */ }
+    }, 1500);
+  }
+
+  function showResults(results) {
+    document.getElementById('progress-card').style.display = 'none';
+    document.getElementById('results-card').style.display = 'block';
+
+    document.getElementById('stat-total').textContent = results.total;
+    document.getElementById('stat-matched').textContent = results.matched;
+    document.getElementById('stat-unmatched').textContent = results.unmatched;
+
+    const tbody = document.getElementById('annotation-tbody');
+    tbody.innerHTML = '';
+    results.annotations.forEach((a, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i + 1}</td>
+        <td>${a.page}</td>
+        <td style="max-width:200px; color:var(--ink); font-size:0.72rem">${escHtml(a.content) || '<em style="color:var(--ink-light)">no text</em>'}</td>
+        <td>
+          <span class="badge ${a.matched ? 'matched' : 'unmatched'}">
+            ${a.matched ? '✓ Placed' : '⚠ Review'}
+          </span>
+          ${a.matched ? '<div style="font-size:0.68rem;color:var(--ink-light);margin-top:2px">' + escHtml(a.confidence) + '</div>' : ''}
+        </td>
+        <td style="font-size:0.72rem">${escHtml(a.note)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function downloadResult(e) {
+    e.preventDefault();
+    if (currentJobId) window.location = '/download/' + currentJobId;
+  }
+
+  function resetForm() {
+    document.getElementById('results-card').style.display = 'none';
+    document.getElementById('upload-card').style.display = 'block';
+    document.getElementById('zone-annotated').classList.remove('has-file');
+    document.getElementById('zone-new').classList.remove('has-file');
+    document.getElementById('name-annotated').textContent = '';
+    document.getElementById('name-new').textContent = '';
+    inputAnnotated.value = '';
+    inputNew.value = '';
+    submitBtn.disabled = true;
+    currentJobId = null;
+    hideError();
+  }
+</script>
+</body>
+</html>
