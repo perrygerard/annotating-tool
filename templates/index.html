@@ -62,10 +62,9 @@
 
     /* Main pages area — fills everything except the sidebar */
     .pages-panel {
-      flex: 1 1 0%; min-width: 0; overflow-y: auto;
+      flex: 1 1 auto; min-width: 0; overflow-y: auto;
       padding: 20px 24px 60px;
       background: #e9e8f3;
-      border-right: 1px solid var(--border);
     }
     .pages-panel-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -146,7 +145,7 @@
 
     /* Right panel — detail sidebar: fixed narrow width */
     .detail-panel {
-      flex: 0 0 240px; width: 240px; overflow-y: auto;
+      flex: 0 0 260px; width: 260px; min-width: 0; overflow-y: auto;
       padding: 16px 14px 60px;
       background: var(--surface);
       border-left: 1px solid var(--border);
@@ -604,7 +603,9 @@
       });
     }
 
-    // Lazy-load images as they scroll into view (within the outer panel)
+    // Eagerly load images that are already visible, lazy-load the rest
+    // Use the panel as root so the observer fires within its scroll container
+    const allLazyImgs = panel.querySelectorAll('img[data-src]');
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(e => {
         if (e.isIntersecting && e.target.dataset.src) {
@@ -613,8 +614,16 @@
           observer.unobserve(e.target);
         }
       });
-    }, { rootMargin: '300px' });
-    panel.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
+    }, { root: panel, rootMargin: '400px' });
+    allLazyImgs.forEach((img, i) => {
+      if (i < 4) {
+        // Load first 2 page-pairs immediately without waiting for observer
+        img.src = img.dataset.src;
+        delete img.dataset.src;
+      } else {
+        observer.observe(img);
+      }
+    });
   }
 
   // ── Annotation selection ───────────────────────────────────────────────────
