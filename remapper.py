@@ -13,6 +13,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
+from tipmatch import compute_tip_matches, HAS_CV as _HAS_TIPMATCH
+
 
 # Annotation type codes in PyMuPDF
 ANNOT_FREETEXT = 2   # Callout
@@ -54,6 +56,7 @@ class AnnotationInfo:
     status: str = "needs_look"  # "moved" | "needs_look" | "content_removed"
     new_rect: Optional[fitz.Rect] = None
     new_vertices: Optional[list] = None
+    new_page_num: Optional[int] = None   # page in the new PDF (defaults to page_num)
     match_note: str = ""
 
 
@@ -955,6 +958,11 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
         if boundary_y is not None:
             print(f"  Page {old_page_num+1}: removal boundary at y={boundary_y:.0f}, shift={shift_y:+.0f}")
 
+    # ── 2c. Tip-anchored visual matching (image pages) ───────────────────────
+    # Match the pixels around each annotation's referenced point, per annotation.
+    tip_matches = compute_tip_matches(old_doc, new_doc, all_annots, page_is_image,
+                                      ANNOT_FREETEXT, ANNOT_SQUARE)
+
     # ── 3. Match each annotation in the new doc ───────────────────────────────
     for info in all_annots:
         key_words = extract_key_words(info.fingerprint_text) if info.fingerprint_text else []
@@ -966,8 +974,35 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
         else:
             still_exists = True  # can't determine for image pages
 
+        tm = tip_matches.get(info.index)
+        if tm is not None:
+            # ── Tip-anchored visual match (preferred for bitmap pages) ───────
+            if tm["confident"]:
+                dx, dy = tm["shift"]
+                target_page = tm["page"]
+                info.matched = True
+                info.match_confidence = tm["score"]
+                info.status = "moved" if tm["score"] >= 0.85 else "needs_look"
+            else:
+                # Weak / ambiguous / not found: borrow the nearest confident
+                # neighbour's shift so the dot still lands in the right region.
+                dx, dy = tm["fallback_shift"]
+                target_page = tm["fallback_page"]
+                info.matched = False
+                info.match_confidence = tm["score"]
+                if tm["score"] < 0.5:
+                    info.status = "content_removed"
+                    results["content_removed"] += 1
+                else:
+                    info.status = "needs_look"
+            info.match_method = "visual"
+            info.match_note = tm["note"]
+            info.new_rect = apply_offset(info.rect, fitz.Point(dx, dy))
+            info.new_vertices = [(v[0] + dx, v[1] + dy) for v in info.vertices]
+            info.new_page_num = target_page
+
         # ── Image-mode: use removal boundary + visual validation ─────────────
-        if page_image_mode or (not info.fingerprint_text and not key_words):
+        elif page_image_mode or (not info.fingerprint_text and not key_words):
             if page_image_mode:
                 old_page = old_doc[info.page_num]
                 new_pn = info.page_num if info.page_num < len(new_doc) else len(new_doc) - 1
@@ -1269,6 +1304,11 @@ def _dot_position(info, pw, ph, dot_r, S):
     return dx, dy
 
 
+def _out_page(info):
+    """Page of the NEW pdf this annotation belongs on."""
+    return info.new_page_num if info.new_page_num is not None else info.page_num
+
+
 def _anchor_point(info):
     """Where the dot goes: remapped tip point, else raw tip, else rect centre."""
     if info.new_vertices:
@@ -1285,7 +1325,7 @@ def assign_numbers(all_annots):
     Rectangles get no number. Returns {annot.index: number}."""
     numbered = [a for a in all_annots
                 if a.annot_type[0] == ANNOT_FREETEXT and a.new_rect is not None]
-    numbered.sort(key=lambda a: (a.page_num, round(_anchor_point(a)[1] / 20), _anchor_point(a)[0]))
+    numbered.sort(key=lambda a: (_out_page(a), round(_anchor_point(a)[1] / 20), _anchor_point(a)[0]))
     return {a.index: n + 1 for n, a in enumerate(numbered)}
 
 
@@ -1341,13 +1381,13 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
     numbered = [info for info in active
                 if info.annot_type[0] == ANNOT_FREETEXT and info.index in num_by_index]
     numbered.sort(key=lambda a: num_by_index[a.index])
-    global_num = {(info.page_num, info.index): num_by_index[info.index] for info in numbered}
+    global_num = {(_out_page(info), info.index): num_by_index[info.index] for info in numbered}
 
     # Group by page
     from collections import defaultdict
     page_annots = defaultdict(list)
     for info in numbered:
-        page_annots[info.page_num].append(info)
+        page_annots[_out_page(info)].append(info)
 
     # ── Expand pages and draw ────────────────────────────────────────────────
     for page_num in range(len(out_doc)):
@@ -1412,7 +1452,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
         # ── Draw sidebar entries ─────────────────────────────────────────────
         cursor_y = HEADER_H + SIDEBAR_PAD
         for info, lns in zip(annots_on_page, wrapped):
-            num = global_num[(info.page_num, info.index)]
+            num = global_num[(_out_page(info), info.index)]
             dot_x = pw + SIDEBAR_PAD + DOT_R
             dot_y = cursor_y + DOT_R
             _draw_number_dot(page, dot_x, dot_y, num, radius=DOT_R)
@@ -1427,7 +1467,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
 
         # ── Draw numbered dots on page content ──────────────────────────────
         for info in annots_on_page:
-            num = global_num[(info.page_num, info.index)]
+            num = global_num[(_out_page(info), info.index)]
 
             dx, dy = _dot_position(info, pw, ph, DOT_R, S)
 
