@@ -110,7 +110,7 @@ def download(job_id):
                      mimetype="application/pdf")
 
 
-def _render_page_png(pdf_path, page_num, target_width_px=600):
+def _render_page_png(pdf_path, page_num, target_width_px=300):
     """Render a PDF page scaled so its width fits target_width_px."""
     doc = fitz.open(pdf_path)
     try:
