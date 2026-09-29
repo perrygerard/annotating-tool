@@ -1253,12 +1253,6 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
                 fill_color=fill,
             )
             annot.set_rect(info.new_rect)
-            # Set border width and color separately (border_color requires rich_text)
-            border_color = info.colors.get("stroke")
-            bw = info.border.get("width", 1) if info.border else 1
-            if border_color:
-                annot.set_colors({"stroke": border_color})
-            annot.set_border(width=bw)
             copy_annot_metadata(meta, annot)
             annot.update()
 
