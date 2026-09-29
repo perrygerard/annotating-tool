@@ -186,9 +186,11 @@
     .legend-swatch.review   { background: var(--warn); }
     .legend-swatch.removed  { background: var(--removed); }
 
-    /* Download */
-    .download-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 10px; background: var(--success); color: white; border: none; border-radius: 7px; font-size: 0.82rem; font-weight: 600; cursor: pointer; text-decoration: none; margin-bottom: 12px; }
-    .download-btn:hover { background: #235e3c; }
+    /* Confirm + Download */
+    .confirm-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 10px; background: var(--success); color: white; border: none; border-radius: 7px; font-size: 0.82rem; font-weight: 600; cursor: pointer; text-decoration: none; margin-bottom: 4px; }
+    .confirm-btn:hover:not(:disabled) { background: #235e3c; }
+    .confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .confirm-hint { font-size: 0.67rem; color: var(--ink-light); text-align: center; margin-bottom: 10px; min-height: 1.2em; }
 
     /* Annotation detail card */
     .detail-header { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); margin-bottom: 8px; margin-top: 4px; }
@@ -225,11 +227,24 @@
     }
     .ann-item:hover { background: var(--bg); }
     .ann-item.active { background: var(--accent-light); border-color: var(--accent); color: var(--ink); }
+    .ann-item.deleted { opacity: 0.38; }
+    .ann-item.deleted .ann-item-text { text-decoration: line-through; }
     .ann-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
     .ann-item-dot.moved { background: var(--success); }
     .ann-item-dot.needs_look { background: var(--warn); }
     .ann-item-dot.content_removed { background: var(--removed); }
+    .ann-item-dot.deleted { background: var(--ink-light); }
     .ann-item-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ann-delete-btn {
+      flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+      border: none; background: transparent; color: var(--ink-light);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 0.8rem; line-height: 1; padding: 0; margin-top: 1px;
+      transition: background 0.12s, color 0.12s;
+    }
+    .ann-delete-btn:hover { background: var(--error-bg); color: var(--error); }
+    .ann-item.deleted .ann-delete-btn { color: var(--success); }
+    .ann-item.deleted .ann-delete-btn:hover { background: var(--success-bg); color: var(--success); }
 
     /* Responsive: stack on narrow */
     @media (max-width: 480px) {
@@ -340,12 +355,13 @@
         <div class="tile removed"><div class="tile-num" id="stat-removed">0</div><div class="tile-label">Removed</div></div>
       </div>
 
-      <a class="download-btn" id="download-btn" href="#" onclick="downloadResult(event)">
+      <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
           <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
         </svg>
-        Download Remapped PDF
-      </a>
+        <span id="confirm-btn-label">Download Remapped PDF</span>
+      </button>
+      <div class="confirm-hint" id="confirm-hint"></div>
 
       <!-- Legend -->
       <div class="legend">
@@ -373,6 +389,7 @@
   let pollInterval = null;
   let progressVal = 30;
   let activeRect = null;
+  let deletedIndices = new Set(); // annotation .index values the user has removed
 
   const inputAnnotated = document.getElementById('input-annotated');
   const inputNew = document.getElementById('input-new');
@@ -457,6 +474,8 @@
 
   function showResults(results) {
     document.getElementById('progress-screen').style.display = 'none';
+    deletedIndices = new Set();
+    updateConfirmButton();
     const rs = document.getElementById('results-screen');
     rs.style.top = document.querySelector('header').getBoundingClientRect().height + 'px';
     rs.classList.add('visible');
@@ -508,18 +527,23 @@
       // For very tall pages (aspect > 2) let the image set its own height via width:100%/height:auto.
       // For normal pages use the padding-bottom aspect-ratio trick so the frame has height
       // before the image loads (ensures IntersectionObserver fires).
-     frame.style.position = 'relative';
-frame.style.paddingBottom = (aspect * 100).toFixed(2) + '%';
-frame.style.height = '0';
+      // Use padding-bottom aspect-ratio trick for ALL pages regardless of aspect.
+      // This sets the frame height from known data before the image loads,
+      // eliminating layout reflow/shaking when images load or user scrolls.
+      frame.style.position = 'relative';
+      frame.style.paddingBottom = (aspect * 100).toFixed(2) + '%';
+      frame.style.height = '0';
 
-const img = document.createElement('img');
-img.alt = '';
-img.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;';
-let retries = 0;
-img.onerror = () => {
-  if (retries++ < 3) setTimeout(() => { img.src = imgSrc + '?r=' + retries; }, 800 * retries);
-};
-img.dataset.src = imgSrc;
+      const img = document.createElement('img');
+      img.alt = '';
+      // Image always fills the aspect-ratio box absolutely
+      img.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;';
+      // Retry up to 3 times on error (race between job completion and first render)
+      let retries = 0;
+      img.onerror = () => {
+        if (retries++ < 3) setTimeout(() => { img.src = imgSrc + '?r=' + retries; }, 800 * retries);
+      };
+      img.dataset.src = imgSrc;
       frame.appendChild(img);
 
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -620,13 +644,27 @@ img.dataset.src = imgSrc;
         const item = document.createElement('div');
         item.className = 'ann-item';
         item.dataset.idx = idx;
+        item.dataset.annIndex = entry.ann.index;
+
         const dot = document.createElement('span');
         dot.className = `ann-item-dot ${entry.ann.status}`;
+
         const text = document.createElement('span');
         text.className = 'ann-item-text';
         text.textContent = `Pg ${entry.pg.page_num} · ${entry.ann.content || '(no text)'}`;
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'ann-delete-btn';
+        delBtn.title = 'Remove this annotation';
+        delBtn.innerHTML = '✕';
+        delBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          toggleDelete(idx, entry.ann.index);
+        });
+
         item.appendChild(dot);
         item.appendChild(text);
+        item.appendChild(delBtn);
         item.addEventListener('click', () => selectAnnotation(idx));
         listEl.appendChild(item);
       });
@@ -714,9 +752,88 @@ img.dataset.src = imgSrc;
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  function downloadResult(e) {
-    e.preventDefault();
-    if (currentJobId) window.location = '/download/' + currentJobId;
+  // ── Delete / restore annotations ──────────────────────────────────────────
+  function toggleDelete(idx, annIndex) {
+    const registry = window._annRegistry || [];
+    const entry = registry[idx];
+    if (!entry) return;
+
+    const listItem = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+    const delBtn = listItem?.querySelector('.ann-delete-btn');
+    const dot = listItem?.querySelector('.ann-item-dot');
+
+    if (deletedIndices.has(annIndex)) {
+      // Restore
+      deletedIndices.delete(annIndex);
+      listItem?.classList.remove('deleted');
+      if (dot) { dot.className = `ann-item-dot ${entry.ann.status}`; }
+      if (delBtn) delBtn.innerHTML = '✕';
+      // Show rects again
+      if (entry.newRectEl) entry.newRectEl.style.display = '';
+      if (entry.oldRectEl) entry.oldRectEl.style.display = '';
+    } else {
+      // Delete
+      deletedIndices.add(annIndex);
+      listItem?.classList.add('deleted');
+      if (dot) { dot.className = 'ann-item-dot deleted'; }
+      if (delBtn) delBtn.innerHTML = '↩';
+      // Hide rects on canvas
+      if (entry.newRectEl) entry.newRectEl.style.display = 'none';
+      if (entry.oldRectEl) entry.oldRectEl.style.display = 'none';
+      // Deselect if this was selected
+      if (activeNewRect === entry.newRectEl) {
+        activeOldRect?.classList.remove('active');
+        activeNewRect?.classList.remove('active');
+        activeOldRect = null; activeNewRect = null;
+        document.querySelectorAll('.ann-item').forEach(el => el.classList.remove('active'));
+        document.getElementById('detail-card').classList.remove('visible');
+        document.getElementById('detail-empty').style.display = '';
+      }
+    }
+    updateConfirmButton();
+  }
+
+  function updateConfirmButton() {
+    const btn = document.getElementById('confirm-btn');
+    const label = document.getElementById('confirm-btn-label');
+    const hint = document.getElementById('confirm-hint');
+    const n = deletedIndices.size;
+    if (n === 0) {
+      label.textContent = 'Download Remapped PDF';
+      hint.textContent = '';
+    } else {
+      label.textContent = 'Confirm & Download';
+      hint.textContent = `${n} annotation${n === 1 ? '' : 's'} will be removed`;
+    }
+  }
+
+  async function confirmAndDownload() {
+    if (!currentJobId) return;
+    const btn = document.getElementById('confirm-btn');
+    btn.disabled = true;
+    document.getElementById('confirm-btn-label').textContent = 'Saving…';
+
+    try {
+      if (deletedIndices.size > 0) {
+        const res = await fetch(`/confirm/${currentJobId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deleted_indices: [...deletedIndices] })
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          alert('Error saving changes: ' + (d.error || res.status));
+          btn.disabled = false;
+          updateConfirmButton();
+          return;
+        }
+      }
+      window.location = '/download/' + currentJobId;
+    } catch(e) {
+      alert('Network error — please try again.');
+    }
+    btn.disabled = false;
+    updateConfirmButton();
   }
 
   function resetForm() {
@@ -728,10 +845,13 @@ img.dataset.src = imgSrc;
     inputAnnotated.value = ''; inputNew.value = '';
     submitBtn.disabled = true; currentJobId = null;
     activeRect = null; activeOldRect = null; activeNewRect = null;
+    deletedIndices = new Set();
     document.getElementById('detail-card').classList.remove('visible');
     document.getElementById('detail-empty').style.display = '';
     document.getElementById('ann-list').innerHTML = '';
     document.getElementById('ann-list-header').style.display = 'none';
+    document.getElementById('confirm-btn-label').textContent = 'Download Remapped PDF';
+    document.getElementById('confirm-hint').textContent = '';
     window._annRegistry = [];
     hideError();
   }
