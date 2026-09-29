@@ -828,7 +828,23 @@
           return;
         }
       }
-      window.location = '/download/' + currentJobId;
+      // Fetch the file as a blob so errors surface without navigating away
+      const dlRes = await fetch('/download/' + currentJobId);
+      if (!dlRes.ok) {
+        const d = await dlRes.json().catch(() => ({}));
+        alert('Download failed: ' + (d.error || dlRes.status));
+        btn.disabled = false;
+        updateConfirmButton();
+        return;
+      }
+      const blob = await dlRes.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'remapped_annotations.pdf';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
     } catch(e) {
       alert('Network error — please try again.');
     }
