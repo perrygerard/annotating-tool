@@ -6,411 +6,160 @@
   <title>PDF Annotation Remapper</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --ink: #1a1a2e;
-      --ink-mid: #3d3d5c;
-      --ink-light: #7070a0;
-      --bg: #f5f4f0;
-      --surface: #ffffff;
-      --accent: #4a6fa5;
-      --accent-dark: #2e4d7a;
+      --ink: #1a1a2e; --ink-mid: #3d3d5c; --ink-light: #7070a0;
+      --bg: #f0eff9; --surface: #ffffff; --accent: #4a6fa5; --accent-dark: #2e4d7a;
       --accent-light: #e8eef7;
-      --success: #2d7a4f;
-      --success-bg: #e8f5ee;
-      --warn: #b45309;
-      --warn-bg: #fef3c7;
-      --error: #c0392b;
-      --error-bg: #fdf0ee;
-      --border: #dddde8;
-      --radius: 10px;
-      --shadow: 0 2px 12px rgba(26,26,46,0.08);
+      --success: #2d7a4f; --success-bg: #e8f5ee; --success-border: #a8d5b8;
+      --warn: #b45309;   --warn-bg: #fef3c7;   --warn-border: #f0c060;
+      --removed: #7c3aed; --removed-bg: #f3f0ff; --removed-border: #c4b0f0;
+      --error: #c0392b; --error-bg: #fdf0ee;
+      --border: #dddde8; --radius: 10px; --shadow: 0 2px 12px rgba(26,26,46,0.08);
     }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
 
-    body {
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      background: var(--bg);
-      color: var(--ink);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
+    /* ── Header ── */
+    header { background: var(--ink); color: white; padding: 16px 28px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    header h1 { font-size: 1.05rem; font-weight: 600; }
+    header p { font-size: 0.77rem; color: rgba(255,255,255,0.5); margin-top: 1px; }
 
-    header {
-      background: var(--ink);
-      color: white;
-      padding: 18px 32px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    header svg { flex-shrink: 0; }
-
-    header h1 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-
-    header p {
-      font-size: 0.8rem;
-      color: rgba(255,255,255,0.55);
-      margin-top: 1px;
-    }
-
-    main {
-      flex: 1;
-      max-width: 760px;
-      margin: 0 auto;
-      padding: 40px 24px 60px;
-      width: 100%;
-    }
-
-    .intro {
-      margin-bottom: 32px;
-    }
-
-    .intro h2 {
-      font-size: 1.4rem;
-      font-weight: 700;
-      color: var(--ink);
-      margin-bottom: 8px;
-      letter-spacing: -0.02em;
-    }
-
-    .intro p {
-      font-size: 0.9rem;
-      color: var(--ink-mid);
-      line-height: 1.6;
-    }
-
-    .steps {
-      display: flex;
-      gap: 8px;
-      margin-top: 16px;
-      flex-wrap: wrap;
-    }
-
-    .step {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.78rem;
-      color: var(--ink-light);
-      background: white;
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 4px 12px;
-    }
-
-    .step-num {
-      background: var(--accent);
-      color: white;
-      border-radius: 50%;
-      width: 16px;
-      height: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.65rem;
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 28px;
-      margin-bottom: 20px;
-    }
-
-    .upload-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-
-    @media (max-width: 520px) {
-      .upload-grid { grid-template-columns: 1fr; }
-    }
-
-    .upload-zone {
-      border: 2px dashed var(--border);
-      border-radius: var(--radius);
-      padding: 24px 16px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
-      position: relative;
-    }
-
-    .upload-zone:hover, .upload-zone.drag-over {
-      border-color: var(--accent);
-      background: var(--accent-light);
-    }
-
-    .upload-zone.has-file {
-      border-color: var(--success);
-      background: var(--success-bg);
-    }
-
-    .upload-zone input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-      width: 100%;
-      height: 100%;
-    }
-
-    .upload-icon {
-      width: 36px;
-      height: 36px;
-      margin: 0 auto 10px;
-      color: var(--ink-light);
-    }
-
+    /* ── Upload screen ── */
+    #upload-screen { flex: 1; max-width: 700px; margin: 0 auto; padding: 40px 24px 60px; width: 100%; }
+    .intro { margin-bottom: 28px; }
+    .intro h2 { font-size: 1.35rem; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.02em; }
+    .intro p { font-size: 0.88rem; color: var(--ink-mid); line-height: 1.6; }
+    .steps { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    .step { display: flex; align-items: center; gap: 6px; font-size: 0.77rem; color: var(--ink-light); background: white; border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; }
+    .step-num { background: var(--accent); color: white; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; flex-shrink: 0; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 26px; margin-bottom: 20px; }
+    .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 520px) { .upload-grid { grid-template-columns: 1fr; } }
+    .upload-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 22px 14px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative; }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: var(--accent-light); }
+    .upload-zone.has-file { border-color: var(--success); background: var(--success-bg); }
+    .upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .upload-icon { width: 34px; height: 34px; margin: 0 auto 9px; color: var(--ink-light); }
     .upload-zone.has-file .upload-icon { color: var(--success); }
-
-    .upload-label {
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--ink-mid);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 4px;
-    }
-
-    .upload-hint {
-      font-size: 0.78rem;
-      color: var(--ink-light);
-    }
-
-    .upload-filename {
-      font-size: 0.78rem;
-      color: var(--success);
-      font-weight: 600;
-      margin-top: 6px;
-      word-break: break-all;
-    }
-
-    .arrow-divider {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--ink-light);
-      font-size: 1.4rem;
-      align-self: center;
-    }
-
-    .submit-btn {
-      display: block;
-      width: 100%;
-      margin-top: 20px;
-      padding: 14px;
-      background: var(--accent);
-      color: white;
-      border: none;
-      border-radius: var(--radius);
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
-      letter-spacing: -0.01em;
-    }
-
+    .upload-label { font-size: 0.77rem; font-weight: 600; color: var(--ink-mid); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+    .upload-hint { font-size: 0.77rem; color: var(--ink-light); }
+    .upload-filename { font-size: 0.77rem; color: var(--success); font-weight: 600; margin-top: 5px; word-break: break-all; }
+    .submit-btn { display: block; width: 100%; margin-top: 18px; padding: 13px; background: var(--accent); color: white; border: none; border-radius: var(--radius); font-size: 0.93rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
     .submit-btn:hover:not(:disabled) { background: var(--accent-dark); }
-    .submit-btn:active:not(:disabled) { transform: scale(0.99); }
-    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .submit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .error-box { background: var(--error-bg); color: var(--error); border-radius: 8px; padding: 11px 15px; font-size: 0.84rem; margin-top: 11px; display: none; }
 
-    /* Progress */
-    #progress-card { display: none; }
+    /* ── Progress screen ── */
+    #progress-screen { display: none; flex: 1; align-items: center; justify-content: center; padding: 60px 24px; }
+    .progress-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 36px 32px; max-width: 440px; width: 100%; text-align: center; }
+    .progress-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+    .progress-card p { font-size: 0.82rem; color: var(--ink-light); margin-bottom: 20px; }
+    .progress-bar-wrap { background: var(--border); border-radius: 99px; height: 6px; overflow: hidden; }
+    .progress-bar { height: 100%; background: var(--accent); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
 
-    .progress-bar-wrap {
-      background: var(--border);
-      border-radius: 99px;
-      height: 6px;
-      overflow: hidden;
-      margin: 16px 0;
+    /* ── Results screen: two-column layout ── */
+    #results-screen { display: none; flex: 1; min-height: 0; }
+    .results-layout { display: flex; height: 100%; min-height: calc(100vh - 56px); }
+
+    /* Left panel — page previews */
+    .pages-panel {
+      flex: 1; min-width: 0; overflow-y: auto;
+      padding: 24px 20px 60px;
+      background: #e8e7f2;
+      border-right: 1px solid var(--border);
+    }
+    .pages-panel h2 { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); margin-bottom: 16px; }
+
+    .page-block { margin-bottom: 28px; }
+    .page-label { font-size: 0.7rem; font-weight: 600; color: var(--ink-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+    .page-frame {
+      position: relative; display: inline-block; width: 100%;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+      border-radius: 3px; overflow: hidden; background: white;
+      cursor: default;
+    }
+    .page-frame img { display: block; width: 100%; height: auto; }
+
+    /* Annotation overlays */
+    .overlay-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+    .ann-rect { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 2px; rx: 2; transition: fill 0.15s; }
+    .ann-rect.moved    { stroke: var(--success); }
+    .ann-rect.needs_look { stroke: var(--warn); }
+    .ann-rect.content_removed { stroke: var(--removed); }
+    .ann-rect.moved:hover    { fill: rgba(45,122,79,0.15); }
+    .ann-rect.needs_look:hover { fill: rgba(180,83,9,0.15); }
+    .ann-rect.content_removed:hover { fill: rgba(124,58,237,0.15); }
+    .ann-rect.active { fill: rgba(74,111,165,0.2); stroke: var(--accent); stroke-width: 2.5px; }
+
+    /* Right panel — detail sidebar */
+    .detail-panel {
+      width: 300px; flex-shrink: 0; overflow-y: auto;
+      padding: 20px 18px 60px;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 0;
     }
 
-    .progress-bar {
-      height: 100%;
-      background: var(--accent);
-      border-radius: 99px;
-      width: 0%;
-      transition: width 0.4s ease;
-      animation: progress-pulse 1.4s ease-in-out infinite;
-    }
+    /* Summary tiles */
+    .summary-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+    .tile { background: var(--bg); border-radius: 8px; padding: 12px; text-align: center; }
+    .tile-num { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+    .tile-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-light); margin-top: 3px; }
+    .tile.total   .tile-num { color: var(--ink); }
+    .tile.moved   .tile-num { color: var(--success); }
+    .tile.review  .tile-num { color: var(--warn); }
+    .tile.removed .tile-num { color: var(--removed); }
 
-    @keyframes progress-pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.7; }
-    }
+    /* Legend */
+    .legend { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; font-size: 0.73rem; color: var(--ink-mid); }
+    .legend-item { display: flex; align-items: center; gap: 7px; }
+    .legend-swatch { width: 14px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+    .legend-swatch.moved    { background: var(--success); }
+    .legend-swatch.review   { background: var(--warn); }
+    .legend-swatch.removed  { background: var(--removed); }
 
-    .progress-status {
-      font-size: 0.85rem;
-      color: var(--ink-mid);
-      text-align: center;
-    }
-
-    /* Results */
-    #results-card { display: none; }
-
-    .results-summary {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .stat {
-      background: var(--bg);
-      border-radius: 8px;
-      padding: 14px;
-      text-align: center;
-    }
-
-    .stat-num {
-      font-size: 1.8rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      line-height: 1;
-    }
-
-    .stat-label {
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--ink-light);
-      margin-top: 4px;
-    }
-
-    .stat.matched .stat-num { color: var(--success); }
-    .stat.unmatched .stat-num { color: var(--warn); }
-    .stat.total .stat-num { color: var(--ink); }
-
-    .download-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      width: 100%;
-      padding: 14px;
-      background: var(--success);
-      color: white;
-      border: none;
-      border-radius: var(--radius);
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background 0.2s;
-      margin-bottom: 16px;
-    }
-
+    /* Download */
+    .download-btn { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 12px; background: var(--success); color: white; border: none; border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; text-decoration: none; margin-bottom: 16px; }
     .download-btn:hover { background: #235e3c; }
 
-    .annotation-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.78rem;
+    /* Annotation detail card */
+    .detail-header { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); margin-bottom: 10px; margin-top: 4px; }
+    .detail-card {
+      background: var(--bg); border-radius: 8px;
+      padding: 14px; font-size: 0.78rem; color: var(--ink-mid);
+      line-height: 1.5; display: none;
     }
+    .detail-card.visible { display: block; }
+    .detail-card .dc-status { margin-bottom: 8px; }
+    .detail-card .dc-content { font-size: 0.76rem; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; font-family: monospace; word-break: break-word; }
+    .detail-card .dc-row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.73rem; margin-bottom: 3px; }
+    .detail-card .dc-row span:first-child { color: var(--ink-light); }
+    .detail-card .dc-row span:last-child { color: var(--ink); font-weight: 500; text-align: right; }
+    .detail-card .dc-note { font-size: 0.71rem; color: var(--ink-light); margin-top: 8px; line-height: 1.4; }
+    .detail-empty { font-size: 0.78rem; color: var(--ink-light); line-height: 1.5; padding: 8px 0; }
 
-    .annotation-table th {
-      text-align: left;
-      padding: 8px 10px;
-      color: var(--ink-light);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      font-size: 0.68rem;
-      border-bottom: 1px solid var(--border);
-    }
+    .badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 0.69rem; font-weight: 600; white-space: nowrap; }
+    .badge.moved            { background: var(--success-bg); color: var(--success); }
+    .badge.needs_look       { background: var(--warn-bg);    color: var(--warn); }
+    .badge.content_removed  { background: var(--removed-bg); color: var(--removed); }
 
-    .annotation-table td {
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: top;
-      color: var(--ink-mid);
-    }
-
-    .annotation-table tr:last-child td { border-bottom: none; }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      border-radius: 99px;
-      font-size: 0.7rem;
-      font-weight: 600;
-    }
-
-    .badge.matched { background: var(--success-bg); color: var(--success); }
-    .badge.unmatched { background: var(--warn-bg); color: var(--warn); }
-
-    details summary {
-      cursor: pointer;
-      font-size: 0.8rem;
-      color: var(--ink-light);
-      padding: 8px 0 0;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    details summary::-webkit-details-marker { display: none; }
-    details[open] summary { color: var(--ink-mid); }
-
-    .chevron {
-      transition: transform 0.2s;
-      display: inline-block;
-    }
-
-    details[open] .chevron { transform: rotate(180deg); }
-
-    /* Error */
-    .error-box {
-      background: var(--error-bg);
-      color: var(--error);
-      border-radius: 8px;
-      padding: 12px 16px;
-      font-size: 0.85rem;
-      margin-top: 12px;
-      display: none;
-    }
-
-    .reset-btn {
-      display: block;
-      width: 100%;
-      margin-top: 12px;
-      padding: 10px;
-      background: transparent;
-      color: var(--ink-mid);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      font-size: 0.85rem;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
+    .reset-btn { display: block; width: 100%; padding: 9px; background: transparent; color: var(--ink-light); border: 1px solid var(--border); border-radius: 8px; font-size: 0.82rem; cursor: pointer; margin-top: 12px; }
     .reset-btn:hover { background: var(--bg); }
+
+    /* Responsive: stack on narrow */
+    @media (max-width: 680px) {
+      .results-layout { flex-direction: column; }
+      .detail-panel { width: 100%; border-left: none; border-top: 1px solid var(--border); }
+    }
   </style>
 </head>
 <body>
 
 <header>
-  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+  <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
     <rect width="28" height="28" rx="6" fill="rgba(255,255,255,0.12)"/>
     <rect x="6" y="5" width="12" height="16" rx="1.5" stroke="white" stroke-width="1.5" fill="none"/>
     <line x1="9" y1="9" x2="15" y2="9" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
     <line x1="9" y1="12" x2="15" y2="12" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="9" y1="15" x2="12" y2="15" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
     <circle cx="20" cy="20" r="5" fill="#4a6fa5" stroke="white" stroke-width="1.5"/>
     <path d="M18.5 20h3M20 18.5v3" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
   </svg>
@@ -420,18 +169,19 @@
   </div>
 </header>
 
-<main>
+<!-- ── Upload screen ── -->
+<div id="upload-screen">
   <div class="intro">
     <h2>Remap annotations to a new PDF version</h2>
-    <p>Upload your annotated PDF and the new updated version. The tool finds where each annotated element moved and repositions all callouts automatically.</p>
+    <p>Upload your annotated PDF and the new updated version. The tool finds where each annotation moved, repositions callouts and rectangles, and shows you the result on every page.</p>
     <div class="steps">
-      <div class="step"><span class="step-num">1</span> Upload the annotated PDF</div>
-      <div class="step"><span class="step-num">2</span> Upload the new updated PDF</div>
-      <div class="step"><span class="step-num">3</span> Download the remapped result</div>
+      <div class="step"><span class="step-num">1</span> Upload both PDFs</div>
+      <div class="step"><span class="step-num">2</span> Review annotations on each page</div>
+      <div class="step"><span class="step-num">3</span> Download the remapped PDF</div>
     </div>
   </div>
 
-  <div class="card" id="upload-card">
+  <div class="card">
     <div class="upload-grid">
       <div class="upload-zone" id="zone-annotated">
         <input type="file" id="input-annotated" accept=".pdf" />
@@ -447,7 +197,6 @@
         <div class="upload-hint">The PDF with existing callouts</div>
         <div class="upload-filename" id="name-annotated"></div>
       </div>
-
       <div class="upload-zone" id="zone-new">
         <input type="file" id="input-new" accept=".pdf" />
         <div class="upload-icon">
@@ -463,216 +212,272 @@
         <div class="upload-filename" id="name-new"></div>
       </div>
     </div>
-
     <div class="error-box" id="error-box"></div>
-
-    <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">
-      Remap Annotations →
-    </button>
+    <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Remap Annotations →</button>
   </div>
+</div>
 
-  <div class="card" id="progress-card">
-    <div class="progress-status" id="progress-status">Processing your PDFs…</div>
+<!-- ── Progress screen ── -->
+<div id="progress-screen">
+  <div class="progress-card">
+    <h3>Processing your PDFs…</h3>
+    <p>Fingerprinting annotations and matching positions in the new document</p>
     <div class="progress-bar-wrap">
-      <div class="progress-bar" id="progress-bar" style="width: 30%"></div>
-    </div>
-    <div class="progress-status" style="font-size:0.75rem; color: var(--ink-light)">
-      Analyzing content and matching annotation positions
+      <div class="progress-bar" id="progress-bar"></div>
     </div>
   </div>
+</div>
 
-  <div class="card" id="results-card">
-    <div class="results-summary">
-      <div class="stat total">
-        <div class="stat-num" id="stat-total">0</div>
-        <div class="stat-label">Total</div>
-      </div>
-      <div class="stat matched">
-        <div class="stat-num" id="stat-matched">0</div>
-        <div class="stat-label">Matched</div>
-      </div>
-      <div class="stat unmatched">
-        <div class="stat-num" id="stat-unmatched">0</div>
-        <div class="stat-label">Review needed</div>
-      </div>
+<!-- ── Results screen ── -->
+<div id="results-screen">
+  <div class="results-layout">
+
+    <!-- Page previews -->
+    <div class="pages-panel" id="pages-panel">
+      <h2>Pages with annotations</h2>
+      <!-- Populated by JS -->
     </div>
 
-    <a class="download-btn" id="download-btn" href="#" onclick="downloadResult(event)">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
-        <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
-      </svg>
-      Download Remapped PDF
-    </a>
+    <!-- Sidebar -->
+    <div class="detail-panel">
+      <!-- Stat tiles -->
+      <div class="summary-tiles">
+        <div class="tile total"><div class="tile-num" id="stat-total">0</div><div class="tile-label">Total</div></div>
+        <div class="tile moved"><div class="tile-num" id="stat-moved">0</div><div class="tile-label">Moved</div></div>
+        <div class="tile review"><div class="tile-num" id="stat-review">0</div><div class="tile-label">Needs look</div></div>
+        <div class="tile removed"><div class="tile-num" id="stat-removed">0</div><div class="tile-label">Removed</div></div>
+      </div>
 
-    <details>
-      <summary>
-        <svg class="chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 5l4 4 4-4"/>
+      <a class="download-btn" id="download-btn" href="#" onclick="downloadResult(event)">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+          <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
         </svg>
-        View annotation details
-      </summary>
-      <div style="margin-top:12px; overflow-x:auto;">
-        <table class="annotation-table" id="annotation-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Page</th>
-              <th>Content preview</th>
-              <th>Status</th>
-              <th>Note</th>
-            </tr>
-          </thead>
-          <tbody id="annotation-tbody"></tbody>
-        </table>
-      </div>
-    </details>
+        Download Remapped PDF
+      </a>
 
-    <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
+      <!-- Legend -->
+      <div class="legend">
+        <div class="legend-item"><span class="legend-swatch moved"></span> Moved — repositioned confidently</div>
+        <div class="legend-item"><span class="legend-swatch review"></span> Needs a look — low confidence</div>
+        <div class="legend-item"><span class="legend-swatch removed"></span> Content removed from document</div>
+      </div>
+
+      <!-- Annotation detail -->
+      <div class="detail-header">Selected annotation</div>
+      <div class="detail-card" id="detail-card"></div>
+      <div class="detail-empty" id="detail-empty">Click any annotation outline on a page to see its details here.</div>
+
+      <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
+    </div>
   </div>
-</main>
+</div>
 
 <script>
   let currentJobId = null;
   let pollInterval = null;
   let progressVal = 30;
+  let activeRect = null;
 
   const inputAnnotated = document.getElementById('input-annotated');
   const inputNew = document.getElementById('input-new');
   const submitBtn = document.getElementById('submit-btn');
 
+  // ── Upload zone setup ──────────────────────────────────────────────────────
   function setupZone(inputEl, zoneId, nameId) {
     const zone = document.getElementById(zoneId);
     const nameEl = document.getElementById(nameId);
-
     inputEl.addEventListener('change', () => {
-      if (inputEl.files[0]) {
-        zone.classList.add('has-file');
-        nameEl.textContent = inputEl.files[0].name;
-      }
+      if (inputEl.files[0]) { zone.classList.add('has-file'); nameEl.textContent = inputEl.files[0].name; }
       checkReady();
     });
-
     zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
     zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
     zone.addEventListener('drop', e => {
-      e.preventDefault();
-      zone.classList.remove('drag-over');
+      e.preventDefault(); zone.classList.remove('drag-over');
       const file = e.dataTransfer.files[0];
-      if (file && file.name.endsWith('.pdf')) {
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        inputEl.files = dt.files;
-        zone.classList.add('has-file');
-        nameEl.textContent = file.name;
-        checkReady();
+      if (file && file.name.toLowerCase().endsWith('.pdf')) {
+        const dt = new DataTransfer(); dt.items.add(file); inputEl.files = dt.files;
+        zone.classList.add('has-file'); nameEl.textContent = file.name; checkReady();
       }
     });
   }
-
   setupZone(inputAnnotated, 'zone-annotated', 'name-annotated');
   setupZone(inputNew, 'zone-new', 'name-new');
+  function checkReady() { submitBtn.disabled = !(inputAnnotated.files[0] && inputNew.files[0]); }
 
-  function checkReady() {
-    submitBtn.disabled = !(inputAnnotated.files[0] && inputNew.files[0]);
-  }
+  function showError(msg) { const b = document.getElementById('error-box'); b.textContent = msg; b.style.display = 'block'; }
+  function hideError() { document.getElementById('error-box').style.display = 'none'; }
 
-  function showError(msg) {
-    const box = document.getElementById('error-box');
-    box.textContent = msg;
-    box.style.display = 'block';
-  }
-
-  function hideError() {
-    document.getElementById('error-box').style.display = 'none';
-  }
-
+  // ── Submit ─────────────────────────────────────────────────────────────────
   async function submitJob() {
     hideError();
     const formData = new FormData();
     formData.append('annotated_pdf', inputAnnotated.files[0]);
     formData.append('new_pdf', inputNew.files[0]);
 
-    document.getElementById('upload-card').style.display = 'none';
-    document.getElementById('progress-card').style.display = 'block';
+    document.getElementById('upload-screen').style.display = 'none';
+    document.getElementById('progress-screen').style.display = 'flex';
     progressVal = 30;
-    animateProgress();
+    document.getElementById('progress-bar').style.width = '30%';
+
+    const timer = setInterval(() => {
+      if (progressVal < 85) { progressVal += Math.random() * 4; document.getElementById('progress-bar').style.width = progressVal + '%'; }
+      else clearInterval(timer);
+    }, 800);
 
     try {
       const res = await fetch('/remap', { method: 'POST', body: formData });
       const data = await res.json();
-      if (!res.ok) { showUploadError(data.error); return; }
+      if (!res.ok) { clearInterval(timer); showUploadError(data.error || 'Upload failed.'); return; }
       currentJobId = data.job_id;
-      startPolling();
-    } catch (e) {
-      showUploadError('Upload failed. Please try again.');
+      pollInterval = setInterval(async () => {
+        try {
+          const r = await fetch('/status/' + currentJobId);
+          const d = await r.json();
+          if (d.status === 'done') {
+            clearInterval(pollInterval); clearInterval(timer);
+            document.getElementById('progress-bar').style.width = '100%';
+            setTimeout(() => showResults(d.results), 400);
+          } else if (d.status === 'error') {
+            clearInterval(pollInterval); clearInterval(timer);
+            showUploadError('Processing error: ' + d.message);
+          }
+        } catch(e) {}
+      }, 1500);
+    } catch(e) {
+      clearInterval(timer);
+      showUploadError('Upload failed — please check your connection and try again.');
     }
   }
 
   function showUploadError(msg) {
-    document.getElementById('progress-card').style.display = 'none';
-    document.getElementById('upload-card').style.display = 'block';
+    document.getElementById('progress-screen').style.display = 'none';
+    document.getElementById('upload-screen').style.display = 'block';
     showError(msg);
   }
 
-  function animateProgress() {
-    const bar = document.getElementById('progress-bar');
-    const timer = setInterval(() => {
-      if (progressVal < 85) {
-        progressVal += Math.random() * 6;
-        bar.style.width = progressVal + '%';
-      } else {
-        clearInterval(timer);
-      }
-    }, 600);
-  }
-
-  function startPolling() {
-    pollInterval = setInterval(async () => {
-      try {
-        const res = await fetch('/status/' + currentJobId);
-        const data = await res.json();
-        if (data.status === 'done') {
-          clearInterval(pollInterval);
-          document.getElementById('progress-bar').style.width = '100%';
-          setTimeout(() => showResults(data.results), 400);
-        } else if (data.status === 'error') {
-          clearInterval(pollInterval);
-          showUploadError('Processing error: ' + data.message);
-        }
-      } catch (e) { /* keep polling */ }
-    }, 1500);
-  }
+  // ── Show results ───────────────────────────────────────────────────────────
+  const STATUS_LABELS = { moved: '✓ Moved', needs_look: '⚠ Needs a look', content_removed: '✕ Content removed' };
 
   function showResults(results) {
-    document.getElementById('progress-card').style.display = 'none';
-    document.getElementById('results-card').style.display = 'block';
+    document.getElementById('progress-screen').style.display = 'none';
+    document.getElementById('results-screen').style.display = 'flex';
 
-    document.getElementById('stat-total').textContent = results.total;
-    document.getElementById('stat-matched').textContent = results.matched;
-    document.getElementById('stat-unmatched').textContent = results.unmatched;
-
-    const tbody = document.getElementById('annotation-tbody');
-    tbody.innerHTML = '';
-    results.annotations.forEach((a, i) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${i + 1}</td>
-        <td>${a.page}</td>
-        <td style="max-width:200px; color:var(--ink); font-size:0.72rem">${escHtml(a.content) || '<em style="color:var(--ink-light)">no text</em>'}</td>
-        <td>
-          <span class="badge ${a.matched ? 'matched' : 'unmatched'}">
-            ${a.matched ? '✓ Placed' : '⚠ Review'}
-          </span>
-          ${a.matched ? '<div style="font-size:0.68rem;color:var(--ink-light);margin-top:2px">' + escHtml(a.confidence) + '</div>' : ''}
-        </td>
-        <td style="font-size:0.72rem">${escHtml(a.note)}</td>
-      `;
-      tbody.appendChild(tr);
+    // Tally by status
+    let moved = 0, review = 0, removed = 0;
+    (results.annotations || []).forEach(a => {
+      if (a.status === 'moved') moved++;
+      else if (a.status === 'content_removed') removed++;
+      else review++;
     });
+    document.getElementById('stat-total').textContent  = results.total;
+    document.getElementById('stat-moved').textContent  = moved;
+    document.getElementById('stat-review').textContent = review;
+    document.getElementById('stat-removed').textContent = removed;
+
+    // Render page thumbnails with overlays
+    const panel = document.getElementById('pages-panel');
+    // Clear previous content except the heading
+    while (panel.children.length > 1) panel.removeChild(panel.lastChild);
+
+    (results.pages || []).forEach(pg => {
+      const block = document.createElement('div');
+      block.className = 'page-block';
+
+      const label = document.createElement('div');
+      label.className = 'page-label';
+      label.textContent = `Page ${pg.page_num}`;
+      block.appendChild(label);
+
+      const frame = document.createElement('div');
+      frame.className = 'page-frame';
+      frame.style.paddingBottom = (pg.aspect * 100) + '%';
+      frame.style.height = '0';
+
+      // Page image — loaded lazily via IntersectionObserver
+      const img = document.createElement('img');
+      img.style.position = 'absolute';
+      img.style.top = '0'; img.style.left = '0';
+      img.style.width = '100%'; img.style.height = '100%';
+      img.style.objectFit = 'cover';
+      img.dataset.src = `/preview/${currentJobId}/${pg.page_num}`;
+      img.alt = `Page ${pg.page_num}`;
+      frame.appendChild(img);
+
+      // SVG overlay
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'overlay-svg');
+      svg.setAttribute('viewBox', `0 0 ${pg.width} ${pg.height}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
+
+      pg.annotations.forEach(ann => {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('class', `ann-rect ${ann.status}`);
+        rect.setAttribute('x', ann.x * pg.width);
+        rect.setAttribute('y', ann.y * pg.height);
+        rect.setAttribute('width', ann.w * pg.width);
+        rect.setAttribute('height', ann.h * pg.height);
+        rect.setAttribute('rx', 2);
+
+        // Ensure minimum visible size for small annotations
+        const minPx = 12;
+        if (parseFloat(rect.getAttribute('width')) < minPx) {
+          rect.setAttribute('x', parseFloat(rect.getAttribute('x')) - minPx/2);
+          rect.setAttribute('width', minPx);
+        }
+        if (parseFloat(rect.getAttribute('height')) < minPx) {
+          rect.setAttribute('y', parseFloat(rect.getAttribute('y')) - minPx/2);
+          rect.setAttribute('height', minPx);
+        }
+
+        rect.addEventListener('click', () => selectAnnotation(rect, ann));
+        svg.appendChild(rect);
+      });
+
+      frame.appendChild(svg);
+      block.appendChild(frame);
+      panel.appendChild(block);
+    });
+
+    // Lazy-load page images as they scroll into view
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting && e.target.dataset.src) {
+          e.target.src = e.target.dataset.src;
+          delete e.target.dataset.src;
+          observer.unobserve(e.target);
+        }
+      });
+    }, { rootMargin: '200px' });
+    panel.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
   }
 
-  function escHtml(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // ── Annotation selection ───────────────────────────────────────────────────
+  function selectAnnotation(rectEl, ann) {
+    if (activeRect) activeRect.classList.remove('active');
+    activeRect = rectEl;
+    rectEl.classList.add('active');
+
+    const status = ann.status || 'moved';
+    const card = document.getElementById('detail-card');
+    const empty = document.getElementById('detail-empty');
+
+    card.innerHTML = `
+      <div class="dc-status"><span class="badge ${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span></div>
+      ${ann.content ? `<div class="dc-content">${esc(ann.content)}</div>` : ''}
+      <div class="dc-row"><span>Author</span><span>${esc(ann.author || '—')}</span></div>
+      <div class="dc-row"><span>Confidence</span><span>${esc(ann.confidence)}</span></div>
+      <div class="dc-note">${esc(ann.note)}</div>`;
+    card.classList.add('visible');
+    empty.style.display = 'none';
+
+    // Scroll detail panel to top so card is visible
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   function downloadResult(e) {
@@ -681,16 +486,16 @@
   }
 
   function resetForm() {
-    document.getElementById('results-card').style.display = 'none';
-    document.getElementById('upload-card').style.display = 'block';
-    document.getElementById('zone-annotated').classList.remove('has-file');
-    document.getElementById('zone-new').classList.remove('has-file');
-    document.getElementById('name-annotated').textContent = '';
-    document.getElementById('name-new').textContent = '';
-    inputAnnotated.value = '';
-    inputNew.value = '';
-    submitBtn.disabled = true;
-    currentJobId = null;
+    document.getElementById('results-screen').style.display = 'none';
+    document.getElementById('upload-screen').style.display = 'block';
+    document.getElementById('pages-panel').innerHTML = '<h2>Pages with annotations</h2>';
+    ['zone-annotated','zone-new'].forEach(id => document.getElementById(id).classList.remove('has-file'));
+    ['name-annotated','name-new'].forEach(id => document.getElementById(id).textContent = '');
+    inputAnnotated.value = ''; inputNew.value = '';
+    submitBtn.disabled = true; currentJobId = null;
+    activeRect = null;
+    document.getElementById('detail-card').classList.remove('visible');
+    document.getElementById('detail-empty').style.display = '';
     hideError();
   }
 </script>

@@ -2,24 +2,23 @@ import os
 import uuid
 import threading
 import time
-from flask import Flask, render_template, request, jsonify, send_file
+import fitz  # PyMuPDF
+from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
 from remapper import process_pdfs
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB max upload
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
 
 UPLOAD_FOLDER = "/tmp/annotation_uploads"
 OUTPUT_FOLDER = "/tmp/annotation_outputs"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# Store job results in memory (fine for single-server use)
 jobs = {}
 
 
 def cleanup_old_files():
-    """Remove files older than 1 hour."""
     while True:
         time.sleep(3600)
         cutoff = time.time() - 3600
@@ -49,11 +48,12 @@ def remap():
     annotated_file = request.files["annotated_pdf"]
     new_file = request.files["new_pdf"]
 
-    if not annotated_file.filename.endswith(".pdf") or not new_file.filename.endswith(".pdf"):
+    if not annotated_file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Both files must be PDFs."}), 400
+    if not new_file.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Both files must be PDFs."}), 400
 
     job_id = str(uuid.uuid4())
-
     annotated_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_annotated.pdf")
     new_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_new.pdf")
     output_path = os.path.join(OUTPUT_FOLDER, f"{job_id}_output.pdf")
@@ -66,15 +66,10 @@ def remap():
     def run_job():
         try:
             results = process_pdfs(annotated_path, new_path, output_path)
-            jobs[job_id] = {
-                "status": "done",
-                "results": results,
-                "output_path": output_path,
-            }
+            jobs[job_id] = {"status": "done", "results": results, "output_path": output_path}
         except Exception as e:
             jobs[job_id] = {"status": "error", "message": str(e)}
         finally:
-            # Clean up inputs
             for p in [annotated_path, new_path]:
                 try:
                     os.remove(p)
@@ -101,12 +96,35 @@ def download(job_id):
     output_path = job.get("output_path")
     if not output_path or not os.path.exists(output_path):
         return jsonify({"error": "File not found"}), 404
-    return send_file(
-        output_path,
-        as_attachment=True,
-        download_name="remapped_annotations.pdf",
-        mimetype="application/pdf"
-    )
+    return send_file(output_path, as_attachment=True,
+                     download_name="remapped_annotations.pdf",
+                     mimetype="application/pdf")
+
+
+@app.route("/preview/<job_id>/<int:page_num>")
+def preview(job_id, page_num):
+    """Render a page of the output PDF as a PNG and return it."""
+    job = jobs.get(job_id)
+    if not job or job["status"] != "done":
+        abort(404)
+    output_path = job.get("output_path")
+    if not output_path or not os.path.exists(output_path):
+        abort(404)
+    try:
+        doc = fitz.open(output_path)
+        if page_num < 1 or page_num > len(doc):
+            abort(404)
+        page = doc[page_num - 1]
+        # Render at 1.5x for reasonable quality without huge payload
+        mat = fitz.Matrix(1.5, 1.5)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        png_bytes = pix.tobytes("png")
+        doc.close()
+        from flask import Response
+        return Response(png_bytes, mimetype="image/png",
+                        headers={"Cache-Control": "private, max-age=300"})
+    except Exception as e:
+        abort(500)
 
 
 if __name__ == "__main__":
