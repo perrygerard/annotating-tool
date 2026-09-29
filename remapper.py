@@ -1246,18 +1246,19 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
                 lum = 0.299 * text_color[0] + 0.587 * text_color[1] + 0.114 * text_color[2]
                 if lum > 0.85:
                     text_color = (0, 0, 0)
-            border_color = info.colors.get("stroke")
             annot = out_page.add_freetext_annot(
                 info.new_rect, info.content,
                 fontsize=info.font_size,
                 text_color=text_color,
                 fill_color=fill,
-                border_color=border_color,
             )
             annot.set_rect(info.new_rect)
-            if info.border:
-                bw = info.border.get("width", 1)
-                annot.set_border(width=bw)
+            # Set border width and color separately (border_color requires rich_text)
+            border_color = info.colors.get("stroke")
+            bw = info.border.get("width", 1) if info.border else 1
+            if border_color:
+                annot.set_colors({"stroke": border_color})
+            annot.set_border(width=bw)
             copy_annot_metadata(meta, annot)
             annot.update()
 
