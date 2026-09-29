@@ -1,14 +1,13 @@
 <!-- v5.1 -->
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="tailwind">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PDF Annotation Remapper</title>
+  <title>Carryover</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Inter:wght@400;500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&family=Manrope:wght@500;600;700&family=Sora:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <script>(function(){try{var q=new URLSearchParams(location.search).get("theme");var t=q||localStorage.getItem("theme")||"tailwind";document.documentElement.setAttribute("data-theme",t);}catch(e){document.documentElement.setAttribute("data-theme","tailwind");}})();</script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=STIX+Two+Math&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -38,9 +37,6 @@
     header { background: var(--chrome); color: var(--ink); padding: 12px 28px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; position: relative; z-index: 20; border-bottom: 1px solid var(--line); }
     header .brand-mark { flex: 0 0 auto; }
     .brand-mark path { fill: var(--ink); } .brand-mark circle { fill: var(--chrome); }
-    .theme-pick { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--ink-light); }
-    .theme-pick select { font: inherit; font-size: 0.76rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; cursor: pointer; }
-    .theme-pick + .header-actions { margin-left: 16px; }
     header h1 { font-family: var(--display); font-size: 1.12rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
     header p { font-size: 0.74rem; color: var(--ink-light); margin-top: 2px; }
 
@@ -115,7 +111,7 @@
     .ann-mark.dragging { cursor: grabbing; }
     .ann-mark.dragging path { stroke: #111; stroke-width: 3px; }
     .ann-mark path { fill: #111; stroke: #fff; stroke-width: 1.5px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
-    .ann-mark text { fill: #fff; font-weight: 700; font-family: var(--display); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .ann-mark text { fill: #fff; font-weight: 700; font-family: var(--body); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
     .ann-mark.moved path, .ann-mark.reviewed path { fill: var(--success); }
     .ann-mark.needs_look path      { fill: var(--warn); }
     .ann-mark.content_removed path { fill: var(--removed); }
@@ -179,7 +175,7 @@
     .num-dot.content_removed { background: var(--removed); }
     .num-dot.deleted         { background: var(--ink-light); }
     .ann-status { margin-right: auto; }
-    .ann-chevron { flex: 0 0 auto; color: var(--ink-light); font-size: 0.8rem; transition: transform 0.15s; }
+    .ann-chevron { flex: 0 0 auto; color: var(--ink-light); transition: transform 0.15s; }
     .ann-item.open .ann-chevron { transform: rotate(180deg); }
     .ann-body { padding: 4px 12px 12px; font-size: 0.78rem; color: var(--ink-mid); line-height: 1.5; }
     .ann-body[hidden] { display: none; }
@@ -208,79 +204,6 @@
       .detail-panel { flex: none; width: 100%; border-left: none; border-top: 1px solid var(--line); }
     }
 
-    /* ══ Style B — Night shift: dark chrome, pages glow like backlit film ══ */
-    html[data-theme="night"] {
-      --ink: #eceef6; --ink-mid: #b4b9cc; --ink-light: #8088a3;
-      --bench: #0d0c15; --bg: #171624; --surface: #1f1e31; --paper: #191828; --chrome: #131220;
-      --line: #2f2e47; --border: #2f2e47;
-      --accent: #8c9cff; --accent-dark: #a9b5ff; --accent-light: #262b5c;
-      --success: #3ecf9b; --success-bg: #123529; --success-border: #22705a;
-      --warn: #f4a53f;    --warn-bg: #3b2a12;    --warn-border: #7a5320;
-      --removed: #b196ff; --removed-bg: #2c2452; --removed-border: #5b4a9c;
-      --error: #ff8f78;   --error-bg: #3c1f1b;
-      --btn: #eceef6; --btn-fg: #131220; --btn-hover: #ffffff; --field: #191828; --label-bg: rgba(255,255,255,0.06);
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.35);
-      --display: 'Sora', 'Segoe UI', system-ui, sans-serif;
-      --body: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
-    }
-    html[data-theme="night"] .page-scroll { box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 0 60px rgba(140,156,255,.10), 0 18px 40px rgba(0,0,0,.55); }
-    html[data-theme="night"] .page-num-label { background: var(--surface); color: var(--ink-mid); box-shadow: none; border: 1px solid var(--line); }
-    html[data-theme="night"] .upload-zone { border-color: #43426a; }
-    html[data-theme="night"] .ann-item:hover { border-color: #46456e; }
-    html[data-theme="night"] .act-remove { border-color: #6b3a32; }
-    html[data-theme="night"] .tile.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-    html[data-theme="night"] .intro h2 { letter-spacing: -0.04em; }
-
-    /* ══ Style C — Riso: yellow header, hard outlines, offset shadows ══ */
-    html[data-theme="riso"] {
-      --ink: #14141a; --ink-mid: #3a3a4a; --ink-light: #62627a;
-      --bench: #c9d3ff; --bg: #eef1ff; --surface: #ffffff; --paper: #ffffff; --chrome: #ffe45c;
-      --line: #14141a; --border: #14141a;
-      --accent: #2b3bff; --accent-dark: #1b28c9; --accent-light: #dfe4ff;
-      --success: #008a5a; --success-bg: #c9f5df; --success-border: #14141a;
-      --warn: #c25500;    --warn-bg: #ffe0bd;    --warn-border: #14141a;
-      --removed: #7a2ff0; --removed-bg: #e6d9ff; --removed-border: #14141a;
-      --error: #c7301a;   --error-bg: #ffd9d2;
-      --btn: #14141a; --btn-fg: #ffe45c; --btn-hover: #2b3bff; --field: #ffffff; --label-bg: #ffffff;
-      --radius: 8px; --shadow: 5px 5px 0 #14141a;
-      --display: 'Archivo', 'Arial Black', system-ui, sans-serif;
-      --body: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
-      --mono: 'Space Mono', ui-monospace, Menlo, monospace;
-    }
-    html[data-theme="riso"] header { border-bottom: 2px solid var(--ink); }
-    html[data-theme="riso"] header h1 { font-weight: 800; letter-spacing: -0.03em; }
-    html[data-theme="riso"] header p { color: var(--ink-mid); }
-    html[data-theme="riso"] .brand-mark circle { fill: #ffe45c; }
-    html[data-theme="riso"] .intro h2 { font-weight: 800; text-transform: uppercase; letter-spacing: -0.03em; line-height: 0.98; }
-    html[data-theme="riso"] .card, html[data-theme="riso"] .progress-card { border: 2px solid var(--ink); border-radius: 10px; box-shadow: var(--shadow); }
-    html[data-theme="riso"] .upload-zone { border: 2px dashed var(--ink); border-radius: 8px; }
-    html[data-theme="riso"] .upload-zone:hover, html[data-theme="riso"] .upload-zone.drag-over { background: #fff7c2; border-color: var(--ink); }
-    html[data-theme="riso"] .upload-zone.has-file { border-style: solid; }
-    html[data-theme="riso"] .upload-zone::before { color: var(--ink); background: #ffe45c; border: 1.5px solid var(--ink); border-radius: 4px; padding: 1px 6px; top: 10px; left: 10px; }
-    html[data-theme="riso"] .upload-grid::after { border: 2px solid var(--ink); box-shadow: none; background: #ffe45c; color: var(--ink); }
-    html[data-theme="riso"] .submit-btn, html[data-theme="riso"] .confirm-btn { border: 2px solid var(--ink); border-radius: 8px; box-shadow: 3px 3px 0 var(--ink); font-weight: 700; }
-    html[data-theme="riso"] .submit-btn:hover:not(:disabled), html[data-theme="riso"] .confirm-btn:hover:not(:disabled) { color: #fff; }
-    html[data-theme="riso"] .step-num { background: var(--ink); color: #ffe45c; }
-    html[data-theme="riso"] .pages-panel { background-image: radial-gradient(rgba(20,20,26,.16) 1px, transparent 1.2px); background-size: 14px 14px; }
-    html[data-theme="riso"] .col-label { border: 2px solid var(--ink); border-radius: 6px; color: var(--ink); }
-    html[data-theme="riso"] .page-num-label { border: 2px solid var(--ink); border-radius: 5px; background: #ffe45c; box-shadow: 2px 2px 0 var(--ink); }
-    html[data-theme="riso"] .page-scroll { border: 2px solid var(--ink); border-radius: 3px; box-shadow: 6px 6px 0 var(--ink); }
-    html[data-theme="riso"] .detail-panel { border-left: 2px solid var(--ink); }
-    html[data-theme="riso"] .tile { border-radius: 8px; }
-    html[data-theme="riso"] .tile.active { border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); background: #fff; }
-    html[data-theme="riso"] .tile:hover:not(.active) { background: #fff7c2; }
-    html[data-theme="riso"] .ann-item { border: 2px solid var(--ink); border-radius: 8px; }
-    html[data-theme="riso"] .ann-item.open { border-color: var(--accent); box-shadow: 4px 4px 0 var(--accent); }
-    html[data-theme="riso"] .num-dot { border: 1.5px solid var(--ink); }
-    html[data-theme="riso"] .badge { border: 1.5px solid var(--ink); }
-    html[data-theme="riso"] .act-btn { border: 2px solid var(--ink); border-radius: 7px; }
-    html[data-theme="riso"] .act-btn.secondary { color: var(--ink); }
-    html[data-theme="riso"] .act-remove { color: var(--error); border-color: var(--ink); }
-    html[data-theme="riso"] .loc-chip { background: #ffe45c; border: 1.5px solid var(--ink); color: var(--ink); }
-    html[data-theme="riso"] .ann-body .dc-content { border: 1.5px solid var(--ink); background: #fff7c2; }
-    html[data-theme="riso"] .reset-btn { border: 2px solid var(--ink); color: var(--ink); }
-    html[data-theme="riso"] .theme-pick select { border: 2px solid var(--ink); background: #fff; }
-
     /* ══ Style D — Tailwind: slate neutrals, sky accent, Inter, ring shadows, pill buttons ══ */
     html[data-theme="tailwind"] {
       --ink: #0f172a; --ink-mid: #475569; --ink-light: #64748b;
@@ -294,13 +217,14 @@
       --btn: #0f172a; --btn-fg: #ffffff; --btn-hover: #334155; --field: #f8fafc; --label-bg: #ffffff;
       --radius: 12px; --shadow: 0 0 0 1px rgb(15 23 42 / .05), 0 1px 3px rgb(15 23 42 / .06), 0 8px 24px -8px rgb(15 23 42 / .08);
       --display: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --wordmark: 'STIX Two Math', 'STIX Two Text', Cambria, 'Times New Roman', serif;
       --body: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
       --mono: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, monospace;
     }
     html[data-theme="tailwind"] body { letter-spacing: -0.005em; }
     html[data-theme="tailwind"] :focus-visible { outline: 2px solid #0ea5e9; outline-offset: 2px; }
     html[data-theme="tailwind"] header { background: rgb(255 255 255 / .85); backdrop-filter: saturate(180%) blur(8px); -webkit-backdrop-filter: saturate(180%) blur(8px); border-bottom: 1px solid rgb(15 23 42 / .08); }
-    html[data-theme="tailwind"] header h1 { font-weight: 700; letter-spacing: -0.025em; font-size: 1.02rem; }
+    html[data-theme="tailwind"] header h1 { font-family: var(--wordmark); font-weight: 400; letter-spacing: 0; font-size: 1.5rem; line-height: 1; }
     html[data-theme="tailwind"] header p { color: #64748b; }
     html[data-theme="tailwind"] #upload-screen { background-image: radial-gradient(60% 320px at 50% 0%, #e0f2fe 0%, rgb(224 242 254 / 0) 100%); }
     html[data-theme="tailwind"] .intro h2 { font-weight: 800; letter-spacing: -0.045em; line-height: 1.05; color: #0f172a; }
@@ -318,9 +242,10 @@
     html[data-theme="tailwind"] .submit-btn { padding: 12px; }
     html[data-theme="tailwind"] .confirm-btn { padding: 9px 18px; }
     html[data-theme="tailwind"] .progress-bar { background: #0ea5e9; }
-    html[data-theme="tailwind"] .pages-panel { background: #f1f5f9; }
-    html[data-theme="tailwind"] .pages-panel-header h2 { font-weight: 700; letter-spacing: -0.02em; }
-    html[data-theme="tailwind"] .col-label { font-family: var(--body); font-weight: 600; letter-spacing: .04em; text-transform: none; font-size: 0.74rem; color: #475569; background: #fff; border-radius: 999px; box-shadow: 0 0 0 1px rgb(15 23 42 / .06); }
+    html[data-theme="tailwind"] .pages-panel { background: #ffffff; padding-top: 0; }
+    html[data-theme="tailwind"] .col-labels { position: sticky; top: 0; z-index: 6; gap: 0; margin: 0 -28px 22px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+    html[data-theme="tailwind"] .col-label { font-family: var(--body); font-weight: 600; font-size: 0.7rem; letter-spacing: .09em; text-transform: uppercase; color: #475569; background: transparent; border-radius: 0; box-shadow: none; padding: 11px 10px; }
+    html[data-theme="tailwind"] .col-label + .col-label { border-left: 1px solid #e2e8f0; }
     html[data-theme="tailwind"] .page-num-label { font-family: var(--body); font-weight: 600; font-size: 0.72rem; background: #fff; color: #334155; border-radius: 999px; padding: 3px 12px; box-shadow: 0 0 0 1px rgb(15 23 42 / .08); }
     html[data-theme="tailwind"] .page-scroll { border-radius: 8px; box-shadow: 0 0 0 1px rgb(15 23 42 / .07), 0 10px 25px -8px rgb(15 23 42 / .15); }
     html[data-theme="tailwind"] .detail-panel { background: #fff; border-left: 1px solid #e2e8f0; }
@@ -330,7 +255,7 @@
     html[data-theme="tailwind"] .tile.active { background: #f0f9ff; border-color: transparent; box-shadow: inset 0 0 0 1.5px #0ea5e9; }
     html[data-theme="tailwind"] .tile-label { font-weight: 500; }
     html[data-theme="tailwind"] .tile-num { font-family: var(--body); font-weight: 600; font-size: 1.05rem; letter-spacing: -0.02em; }
-    html[data-theme="tailwind"] .ann-item { border: none; border-radius: 12px; box-shadow: 0 0 0 1px rgb(15 23 42 / .08), 0 1px 2px rgb(15 23 42 / .04); }
+    html[data-theme="tailwind"] .ann-item { border: none; border-radius: 5px; box-shadow: 0 0 0 1px rgb(15 23 42 / .08), 0 1px 2px rgb(15 23 42 / .04); }
     html[data-theme="tailwind"] .ann-item:hover { box-shadow: 0 0 0 1px rgb(15 23 42 / .16), 0 1px 2px rgb(15 23 42 / .06); }
     html[data-theme="tailwind"] .ann-item.open { box-shadow: 0 0 0 2px #0ea5e9, 0 4px 12px -2px rgb(14 165 233 / .2); }
     html[data-theme="tailwind"] .num-dot { font-family: var(--body); font-weight: 700; }
@@ -346,7 +271,6 @@
     html[data-theme="tailwind"] .act-remove:hover { background: #fef2f2; }
     html[data-theme="tailwind"] .loc-row { border-top: 1px solid #e2e8f0; }
     html[data-theme="tailwind"] .reset-btn { border-radius: 8px; border-color: transparent; box-shadow: 0 0 0 1px #cbd5e1; color: #334155; }
-    html[data-theme="tailwind"] .theme-pick select { border-color: transparent; box-shadow: 0 0 0 1px #cbd5e1; border-radius: 8px; }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
@@ -358,10 +282,9 @@
     <circle cx="15" cy="14" r="4.2"/>
   </svg>
   <div>
-    <h1>PDF Annotation Remapper</h1>
+    <h1>Carryover</h1>
     <p>Carry review comments onto a new version of a PDF</p>
   </div>
-  <label class="theme-pick"><span>Style</span><select id="theme-pick" aria-label="Visual style"><option value="tailwind">Tailwind</option><option value="bench">Proof bench</option><option value="night">Night shift</option><option value="riso">Riso</option></select></label>
   <div class="header-actions" id="header-actions" hidden>
     <span class="confirm-hint" id="confirm-hint"></span>
     <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
@@ -440,9 +363,6 @@
 
     <!-- Page previews -->
     <div class="pages-panel" id="pages-panel">
-      <div class="pages-panel-header">
-        <h2>Pages with annotations</h2>
-      </div>
       <div class="col-labels">
         <div class="col-label">Original</div>
         <div class="col-label">Updated</div>
@@ -584,8 +504,8 @@
 
     // Render page thumbnails with overlays
     const panel = document.getElementById('pages-panel');
-    // Clear everything after the two header elements (h2 div + col-labels div)
-    while (panel.children.length > 2) panel.removeChild(panel.lastChild);
+    // Clear everything after the sticky column labels
+    while (panel.children.length > 1) panel.removeChild(panel.lastChild);
 
     // Registry: index → { newRectEl, oldRectEl, newScrollEl, oldScrollEl, ann, pg }
     const annRegistry = [];
@@ -915,7 +835,7 @@
         <span class="num-dot${String(a.number).length > 2 ? ' n3' : ''}">${esc(a.number)}</span>
         ${extra.length ? `<span class="loc-chip">${group.length} places</span>` : ''}
         <span class="badge ann-status"></span>
-        <span class="ann-chevron" aria-hidden="true">▾</span>
+        <svg class="ann-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg>
       </button>
       <div class="ann-body" id="${bodyId}" hidden>
         ${a.content ? `<div class="dc-content">${esc(a.content)}</div>` : ''}
@@ -1161,21 +1081,11 @@
     updateConfirmButton();
   }
 
-  // Style switcher (temporary while choosing a look)
-  (function () {
-    const sel = document.getElementById('theme-pick');
-    sel.value = document.documentElement.getAttribute('data-theme') || 'tailwind';
-    sel.addEventListener('change', () => {
-      document.documentElement.setAttribute('data-theme', sel.value);
-      try { localStorage.setItem('theme', sel.value); } catch (e) {}
-    });
-  })();
-
   function resetForm() {
     document.getElementById('results-screen').classList.remove('visible');
     document.getElementById('header-actions').hidden = true;
     document.getElementById('upload-screen').style.display = 'block';
-    document.getElementById('pages-panel').innerHTML = '<div class="pages-panel-header"><h2>Pages with annotations</h2></div><div class="col-labels"><div class="col-label">Original</div><div class="col-label">Updated</div></div>';
+    document.getElementById('pages-panel').innerHTML = '<div class="col-labels"><div class="col-label">Original</div><div class="col-label">Updated</div></div>';
     ['zone-annotated','zone-new'].forEach(id => document.getElementById(id).classList.remove('has-file'));
     ['name-annotated','name-new'].forEach(id => document.getElementById(id).textContent = '');
     inputAnnotated.value = ''; inputNew.value = '';

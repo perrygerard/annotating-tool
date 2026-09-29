@@ -1,5 +1,5 @@
 """
-PDF Annotation Remapper v2
+Carryover (PDF annotation remapper) v2
 Remaps callout and rectangle annotations from an old PDF to a new version,
 preserving metadata (author, dates, reply threads, review status).
 
@@ -1248,7 +1248,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             old_pw, old_ph = old_page.rect.width, old_page.rect.height
 
         overlay_annots = []
-        auto_pg = _auto_sides(annots_by_page[(page_num, out_pn)], pw, dot_r_pg, S_pg)
+        auto_pg = _auto_sides(annots_by_page[(page_num, out_pn)], pw, dot_r_pg * PIN_SCALE, S_pg)
         for info in annots_by_page[(page_num, out_pn)]:
             new_r = info.new_rect if info.new_rect else info.rect
             old_r = info.rect  # original position in old PDF
@@ -1358,6 +1358,7 @@ def _scale(pw):
     return max(1.0, pw / 900.0)
 
 
+PIN_SCALE = 0.5   # page pins are half the size of the sidebar number dots
 PIN_L = 1.75   # pin length: distance from body centre to the point, in body radii
 
 
@@ -1615,8 +1616,9 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             cursor_y += max(DOT_R * 2, len(lns) * lead) + gap
 
         # ── Draw numbered dots on page content ──────────────────────────────
+        PIN_R = DOT_R * PIN_SCALE
         pins_on_page = page_pins.get(page_num, [])
-        auto_sd = _auto_sides(pins_on_page, pw, DOT_R, S) if draw_dots else {}
+        auto_sd = _auto_sides(pins_on_page, pw, PIN_R, S) if draw_dots else {}
         for info in pins_on_page:
             num = _pin_label(info, global_num[(_out_page(info), info.index)])
 
@@ -1628,13 +1630,13 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
                 fx, fy = overrides[info.index]
                 px, py = fx * (pw + SIDEBAR_W), fy * ph
             else:
-                px, py = _dot_position(info, pw, ph, DOT_R, S, side)
+                px, py = _dot_position(info, pw, ph, PIN_R, S, side)
 
             # Keep the body on the page; the point stays on the target
-            cx, cy = _pin_body_center(px, py, DOT_R, side)
-            cx = max(DOT_R + 1, min(cx, pw - DOT_R - 1))
-            cy = max(DOT_R + 1, min(cy, ph - DOT_R - 1))
-            _draw_pin(page, cx, cy, px, py, num, DOT_R)
+            cx, cy = _pin_body_center(px, py, PIN_R, side)
+            cx = max(PIN_R + 1, min(cx, pw - PIN_R - 1))
+            cy = max(PIN_R + 1, min(cy, ph - PIN_R - 1))
+            _draw_pin(page, cx, cy, px, py, num, PIN_R)
 
     # Rectangles are intentionally not written: the numbered dots replace them.
 
