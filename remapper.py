@@ -674,7 +674,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
     pages_preview = []
     preview_doc = fitz.open(new_pdf_path)
-    old_doc = fitz.open(old_pdf_path)
+    old_preview_doc = fitz.open(old_pdf_path)
     for page_num in sorted(annots_by_page.keys()):
         if page_num >= len(preview_doc):
             continue
@@ -683,8 +683,8 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
         # Old page dimensions (may differ from new page)
         old_pw, old_ph = pw, ph
-        if page_num < len(old_doc):
-            old_page = old_doc[page_num]
+        if page_num < len(old_preview_doc):
+            old_page = old_preview_doc[page_num]
             old_pw, old_ph = old_page.rect.width, old_page.rect.height
 
         overlay_annots = []
@@ -737,7 +737,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             "annotations": overlay_annots,
         })
     preview_doc.close()
-    old_doc.close()
+    old_preview_doc.close()
     results["pages"] = pages_preview
 
     # ── 5. Write output PDF ───────────────────────────────────────────────────
@@ -786,8 +786,9 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             annot.update()
 
     out_doc.save(output_path, garbage=4, deflate=True)
-    old_doc.close()
+    old_doc.close()   # the main matching-loop doc opened at the top
     new_doc.close()
     out_doc.close()
+
 
     return results
