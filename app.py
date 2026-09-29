@@ -110,9 +110,25 @@ def download(job_id):
                      mimetype="application/pdf")
 
 
+def _render_page_png(pdf_path, page_num, target_width_px=600):
+    """Render a PDF page scaled so its width fits target_width_px."""
+    doc = fitz.open(pdf_path)
+    try:
+        if page_num < 1 or page_num > len(doc):
+            return None
+        page = doc[page_num - 1]
+        # Scale so the rendered width == target_width_px regardless of PDF dimensions
+        scale = target_width_px / page.rect.width
+        mat = fitz.Matrix(scale, scale)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        return pix.tobytes("png")
+    finally:
+        doc.close()
+
+
 @app.route("/preview/<job_id>/<int:page_num>")
 def preview(job_id, page_num):
-    """Render a page of the output PDF as a PNG and return it."""
+    """Render a page of the output PDF as a PNG."""
     job = jobs.get(job_id)
     if not job or job["status"] != "done":
         abort(404)
@@ -120,25 +136,19 @@ def preview(job_id, page_num):
     if not output_path or not os.path.exists(output_path):
         abort(404)
     try:
-        doc = fitz.open(output_path)
-        if page_num < 1 or page_num > len(doc):
+        png_bytes = _render_page_png(output_path, page_num)
+        if png_bytes is None:
             abort(404)
-        page = doc[page_num - 1]
-        # Render at 1.5x for reasonable quality without huge payload
-        mat = fitz.Matrix(1.5, 1.5)
-        pix = page.get_pixmap(matrix=mat, alpha=False)
-        png_bytes = pix.tobytes("png")
-        doc.close()
         from flask import Response
         return Response(png_bytes, mimetype="image/png",
-                        headers={"Cache-Control": "private, max-age=300"})
-    except Exception as e:
+                        headers={"Cache-Control": "private, max-age=3600"})
+    except Exception:
         abort(500)
 
 
 @app.route("/preview-original/<job_id>/<int:page_num>")
 def preview_original(job_id, page_num):
-    """Render a page of the original annotated PDF as a PNG (no annotations drawn)."""
+    """Render a page of the original annotated PDF as a PNG."""
     job = jobs.get(job_id)
     if not job or job["status"] != "done":
         abort(404)
@@ -146,17 +156,12 @@ def preview_original(job_id, page_num):
     if not annotated_path or not os.path.exists(annotated_path):
         abort(404)
     try:
-        doc = fitz.open(annotated_path)
-        if page_num < 1 or page_num > len(doc):
+        png_bytes = _render_page_png(annotated_path, page_num)
+        if png_bytes is None:
             abort(404)
-        page = doc[page_num - 1]
-        mat = fitz.Matrix(1.5, 1.5)
-        pix = page.get_pixmap(matrix=mat, alpha=False)
-        png_bytes = pix.tobytes("png")
-        doc.close()
         from flask import Response
         return Response(png_bytes, mimetype="image/png",
-                        headers={"Cache-Control": "private, max-age=300"})
+                        headers={"Cache-Control": "private, max-age=3600"})
     except Exception:
         abort(500)
 
