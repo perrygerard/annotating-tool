@@ -71,13 +71,35 @@
 
     .page-block { margin-bottom: 28px; }
     .page-label { font-size: 0.7rem; font-weight: 600; color: var(--ink-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
-    .page-frame {
-      position: relative; display: inline-block; width: 100%;
+
+    /* Scrollable viewport for tall pages */
+    .page-scroll {
+      max-height: 640px;
+      overflow-y: auto;
+      overflow-x: hidden;
       box-shadow: 0 2px 12px rgba(0,0,0,0.18);
-      border-radius: 3px; overflow: hidden; background: white;
-      cursor: default;
+      border-radius: 3px;
+      background: white;
+      scroll-behavior: smooth;
+    }
+    /* Inner frame holds the actual image + SVG at natural height */
+    .page-frame {
+      position: relative;
+      width: 100%;
+      /* height set by JS once the image loads */
     }
     .page-frame img { display: block; width: 100%; height: auto; }
+
+    /* Scroll-hint gradient when page is taller than viewport */
+    .page-scroll.is-tall::after {
+      content: '';
+      display: block;
+      position: sticky;
+      bottom: 0; left: 0; right: 0;
+      height: 32px;
+      background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.85));
+      pointer-events: none;
+    }
 
     /* Annotation overlays */
     .overlay-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
@@ -144,6 +166,22 @@
 
     .reset-btn { display: block; width: 100%; padding: 9px; background: transparent; color: var(--ink-light); border: 1px solid var(--border); border-radius: 8px; font-size: 0.82rem; cursor: pointer; margin-top: 12px; }
     .reset-btn:hover { background: var(--bg); }
+
+    /* Annotation index list */
+    .ann-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 8px 10px; border-radius: 7px; cursor: pointer;
+      font-size: 0.75rem; color: var(--ink-mid); line-height: 1.35;
+      border: 1px solid transparent; margin-bottom: 4px;
+      transition: background 0.12s;
+    }
+    .ann-item:hover { background: var(--bg); }
+    .ann-item.active { background: var(--accent-light); border-color: var(--accent); color: var(--ink); }
+    .ann-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+    .ann-item-dot.moved { background: var(--success); }
+    .ann-item-dot.needs_look { background: var(--warn); }
+    .ann-item-dot.content_removed { background: var(--removed); }
+    .ann-item-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Responsive: stack on narrow */
     @media (max-width: 680px) {
@@ -267,6 +305,10 @@
       <div class="detail-card" id="detail-card"></div>
       <div class="detail-empty" id="detail-empty">Click any annotation outline on a page to see its details here.</div>
 
+      <!-- Annotation index list -->
+      <div class="detail-header" id="ann-list-header" style="display:none;margin-top:16px;">All annotations</div>
+      <div id="ann-list"></div>
+
       <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
     </div>
   </div>
@@ -377,8 +419,10 @@
 
     // Render page thumbnails with overlays
     const panel = document.getElementById('pages-panel');
-    // Clear previous content except the heading
     while (panel.children.length > 1) panel.removeChild(panel.lastChild);
+
+    // Registry: index → { rectEl, scrollEl, ann } for sidebar list clicks
+    const annRegistry = [];
 
     (results.pages || []).forEach(pg => {
       const block = document.createElement('div');
@@ -389,22 +433,21 @@
       label.textContent = `Page ${pg.page_num}`;
       block.appendChild(label);
 
+      // Scrollable wrapper for tall pages
+      const scrollEl = document.createElement('div');
+      scrollEl.className = 'page-scroll';
+      if (pg.aspect > 1.5) scrollEl.classList.add('is-tall'); // flag very tall pages
+
       const frame = document.createElement('div');
       frame.className = 'page-frame';
-      frame.style.paddingBottom = (pg.aspect * 100) + '%';
-      frame.style.height = '0';
 
-      // Page image — loaded lazily via IntersectionObserver
+      // Page image — lazy loaded
       const img = document.createElement('img');
-      img.style.position = 'absolute';
-      img.style.top = '0'; img.style.left = '0';
-      img.style.width = '100%'; img.style.height = '100%';
-      img.style.objectFit = 'cover';
       img.dataset.src = `/preview/${currentJobId}/${pg.page_num}`;
       img.alt = `Page ${pg.page_num}`;
       frame.appendChild(img);
 
-      // SVG overlay
+      // SVG overlay — sized to match the natural image dimensions
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('class', 'overlay-svg');
       svg.setAttribute('viewBox', `0 0 ${pg.width} ${pg.height}`);
@@ -419,27 +462,53 @@
         rect.setAttribute('height', ann.h * pg.height);
         rect.setAttribute('rx', 2);
 
-        // Ensure minimum visible size for small annotations
+        // Minimum clickable size
         const minPx = 12;
-        if (parseFloat(rect.getAttribute('width')) < minPx) {
-          rect.setAttribute('x', parseFloat(rect.getAttribute('x')) - minPx/2);
-          rect.setAttribute('width', minPx);
-        }
-        if (parseFloat(rect.getAttribute('height')) < minPx) {
-          rect.setAttribute('y', parseFloat(rect.getAttribute('y')) - minPx/2);
-          rect.setAttribute('height', minPx);
-        }
+        const rx = parseFloat(rect.getAttribute('x'));
+        const ry = parseFloat(rect.getAttribute('y'));
+        const rw = parseFloat(rect.getAttribute('width'));
+        const rh = parseFloat(rect.getAttribute('height'));
+        if (rw < minPx) { rect.setAttribute('x', rx - (minPx - rw)/2); rect.setAttribute('width', minPx); }
+        if (rh < minPx) { rect.setAttribute('y', ry - (minPx - rh)/2); rect.setAttribute('height', minPx); }
 
-        rect.addEventListener('click', () => selectAnnotation(rect, ann));
+        const idx = annRegistry.length;
+        annRegistry.push({ rectEl: rect, scrollEl, ann, pg });
+        rect.addEventListener('click', () => selectAnnotation(idx));
         svg.appendChild(rect);
       });
 
       frame.appendChild(svg);
-      block.appendChild(frame);
+      scrollEl.appendChild(frame);
+      block.appendChild(scrollEl);
       panel.appendChild(block);
     });
 
-    // Lazy-load page images as they scroll into view
+    // Store registry globally so sidebar list can reach it
+    window._annRegistry = annRegistry;
+
+    // Build annotation index list in sidebar
+    const listEl = document.getElementById('ann-list');
+    const listHeader = document.getElementById('ann-list-header');
+    listEl.innerHTML = '';
+    if (annRegistry.length) {
+      listHeader.style.display = '';
+      annRegistry.forEach((entry, idx) => {
+        const item = document.createElement('div');
+        item.className = 'ann-item';
+        item.dataset.idx = idx;
+        const dot = document.createElement('span');
+        dot.className = `ann-item-dot ${entry.ann.status}`;
+        const text = document.createElement('span');
+        text.className = 'ann-item-text';
+        text.textContent = `Pg ${entry.pg.page_num} · ${entry.ann.content || '(no text)'}`;
+        item.appendChild(dot);
+        item.appendChild(text);
+        item.addEventListener('click', () => selectAnnotation(idx));
+        listEl.appendChild(item);
+      });
+    }
+
+    // Lazy-load images as they scroll into view (within the outer panel)
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(e => {
         if (e.isIntersecting && e.target.dataset.src) {
@@ -448,15 +517,46 @@
           observer.unobserve(e.target);
         }
       });
-    }, { rootMargin: '200px' });
+    }, { rootMargin: '300px' });
     panel.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
   }
 
   // ── Annotation selection ───────────────────────────────────────────────────
-  function selectAnnotation(rectEl, ann) {
+  function selectAnnotation(idx) {
+    const registry = window._annRegistry || [];
+    const entry = registry[idx];
+    if (!entry) return;
+    const { rectEl, scrollEl, ann } = entry;
+
+    // Deactivate previous
     if (activeRect) activeRect.classList.remove('active');
     activeRect = rectEl;
     rectEl.classList.add('active');
+
+    // Update sidebar list highlight
+    document.querySelectorAll('.ann-item').forEach(el => el.classList.remove('active'));
+    const listItem = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+    if (listItem) { listItem.classList.add('active'); listItem.scrollIntoView({ block: 'nearest' }); }
+
+    // Scroll the page viewport so the annotation is centered
+    // The rect's y attribute is in SVG coords; map to pixel position in the frame
+    const svgEl = rectEl.closest('svg');
+    const frameEl = svgEl ? svgEl.closest('.page-frame') : null;
+    if (frameEl && scrollEl) {
+      const frameH = frameEl.offsetHeight || frameEl.getBoundingClientRect().height;
+      const vb = svgEl.viewBox.baseVal;
+      const annY = parseFloat(rectEl.getAttribute('y'));
+      const annH = parseFloat(rectEl.getAttribute('height'));
+      if (vb && vb.height) {
+        const pixY = (annY / vb.height) * frameH;
+        const pixH = (annH / vb.height) * frameH;
+        const scrollTarget = pixY - (scrollEl.clientHeight / 2) + pixH / 2;
+        scrollEl.scrollTop = Math.max(0, scrollTarget);
+      }
+    }
+
+    // Scroll outer pages panel so the page block is visible
+    scrollEl.closest('.page-block')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     const status = ann.status || 'moved';
     const card = document.getElementById('detail-card');
@@ -470,9 +570,6 @@
       <div class="dc-note">${esc(ann.note)}</div>`;
     card.classList.add('visible');
     empty.style.display = 'none';
-
-    // Scroll detail panel to top so card is visible
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   function esc(s) {
@@ -496,6 +593,9 @@
     activeRect = null;
     document.getElementById('detail-card').classList.remove('visible');
     document.getElementById('detail-empty').style.display = '';
+    document.getElementById('ann-list').innerHTML = '';
+    document.getElementById('ann-list-header').style.display = 'none';
+    window._annRegistry = [];
     hideError();
   }
 </script>
