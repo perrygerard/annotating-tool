@@ -57,8 +57,12 @@
     .progress-bar { height: 100%; background: var(--accent); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
 
     /* ── Results screen ── */
-    #results-screen { display: none; flex: 1; min-height: 0; overflow: hidden; }
-    .results-layout { display: flex; height: 100%; min-height: calc(100vh - 56px); overflow: hidden; }
+    #results-screen { display: none; flex: 1 1 auto; min-height: 0; }
+    .results-layout {
+      display: flex;
+      height: calc(100vh - 56px); /* 56px = header height */
+      overflow: hidden;
+    }
 
     /* Main pages area — fills everything except the sidebar */
     .pages-panel {
@@ -112,8 +116,9 @@
     .page-frame {
       position: relative;
       width: 100%;
+      background: #f8f8f8;
     }
-    .page-frame img { display: block; width: 100%; height: auto; }
+    /* img is positioned absolute inside the aspect-ratio box via inline style */
 
     /* Tall-page fade hint */
     .page-scroll.is-tall::after {
@@ -124,7 +129,7 @@
     }
 
     /* Annotation overlays */
-    .overlay-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+    .overlay-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
 
     /* New-side overlays: full status color */
     .ann-rect { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 2px; transition: fill 0.15s; }
@@ -487,10 +492,21 @@
 
       const frame = document.createElement('div');
       frame.className = 'page-frame';
+      // Reserve space so the observer fires even before the image loads
+      frame.style.position = 'relative';
+      frame.style.paddingBottom = (aspect * 100).toFixed(2) + '%';
+      frame.style.height = '0';
 
       const img = document.createElement('img');
-      img.dataset.src = imgSrc;
       img.alt = '';
+      // Position inside the aspect-ratio box
+      img.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;';
+      // Retry up to 3 times on error (race between job completion and first render)
+      let retries = 0;
+      img.onerror = () => {
+        if (retries++ < 3) setTimeout(() => { img.src = imgSrc + '?r=' + retries; }, 800 * retries);
+      };
+      img.dataset.src = imgSrc;
       frame.appendChild(img);
 
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
