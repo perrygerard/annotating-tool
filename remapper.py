@@ -1204,70 +1204,199 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     return results
 
 
-def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
-    """Write annotations to a new PDF, optionally skipping some by their index field.
+def _wrap_text(text, max_chars):
+    """Wrap text to lines of at most max_chars, breaking on spaces."""
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        if current and len(current) + 1 + len(word) > max_chars:
+            lines.append(current)
+            current = word
+        else:
+            current = (current + " " + word).strip() if current else word
+    if current:
+        lines.append(current)
+    return lines
 
-    Args:
-        all_annots: list of AnnotationInfo objects (from process_pdfs results["_all_annots"])
-        new_pdf_path: path to the new (target) PDF
-        output_path: where to save the output PDF
-        skip_indices: set of annotation index values to omit (matches AnnotationInfo.index)
+
+def _draw_number_dot(page, cx, cy, number, radius=7):
+    """Draw a filled black circle with white number at (cx, cy) in fitz coords."""
+    # Draw filled circle
+    page.draw_circle(fitz.Point(cx, cy), radius, color=(0, 0, 0), fill=(0, 0, 0))
+    # Draw white number centered in circle
+    label = str(number)
+    fontsize = 6 if len(label) == 1 else 5
+    tw = fitz.get_text_length(label, fontname="helv", fontsize=fontsize)
+    tx = cx - tw / 2
+    ty = cy + fontsize * 0.35  # vertical center approximation
+    page.insert_text(fitz.Point(tx, ty), label, fontname="helv",
+                     fontsize=fontsize, color=(1, 1, 1))
+
+
+def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
+    """Write annotations to a new PDF with a numbered reference sidebar.
+
+    Each page is expanded rightward by SIDEBAR_W points. Annotations get:
+    - A filled black dot with white number at the tip/anchor point on the page
+    - A numbered entry in the right sidebar listing the annotation content
     """
     if skip_indices is None:
         skip_indices = set()
 
+    SIDEBAR_W = 180          # pts added to right of each page
+    SIDEBAR_PAD = 10         # inner padding
+    DOT_R = 7                # dot radius in pts
+    ENTRY_FONT = 7           # sidebar text font size
+    ENTRY_LEAD = 11          # line height for sidebar text
+    HEADER_H = 22            # height of "References" header area
+    SIDEBAR_BG = (0.97, 0.97, 0.97)   # near-white background
+    DIVIDER_COLOR = (0.8, 0.8, 0.8)   # light grey divider
+    DOT_COLOR = (0.1, 0.1, 0.1)       # near-black dot
+
     out_doc = fitz.open(new_pdf_path)
 
-    for info in all_annots:
-        if info.index in skip_indices:
-            continue
-        if info.new_rect is None:
-            continue
-        target_page_num = info.page_num
-        if target_page_num >= len(out_doc):
-            continue
-        out_page = out_doc[target_page_num]
+    # ── Group active annotations by page ────────────────────────────────────
+    # Assign global sequential numbers (1-based) across all pages
+    active = [info for info in all_annots
+              if info.index not in skip_indices and info.new_rect is not None]
 
+    # Map annotation index → global number
+    global_num = {info.index: i + 1 for i, info in enumerate(active)}
+
+    # Group by page
+    from collections import defaultdict
+    page_annots = defaultdict(list)
+    for info in active:
+        page_annots[info.page_num].append(info)
+
+    # ── Expand pages and draw ────────────────────────────────────────────────
+    for page_num in range(len(out_doc)):
+        page = out_doc[page_num]
+        orig_rect = page.rect
+        pw = orig_rect.width
+        ph = orig_rect.height
+
+        # Expand the mediabox rightward
+        new_mediabox = fitz.Rect(0, 0, pw + SIDEBAR_W, ph)
+        page.set_mediabox(new_mediabox)
+        page.set_cropbox(new_mediabox)
+
+        annots_on_page = page_annots.get(page_num, [])
+
+        # ── Draw sidebar background ──────────────────────────────────────────
+        sidebar_rect = fitz.Rect(pw, 0, pw + SIDEBAR_W, ph)
+        page.draw_rect(sidebar_rect, color=None, fill=SIDEBAR_BG)
+
+        # Divider line between content and sidebar
+        page.draw_line(fitz.Point(pw, 0), fitz.Point(pw, ph),
+                       color=DIVIDER_COLOR, width=0.5)
+
+        # "References" header
+        if annots_on_page:
+            header_y = SIDEBAR_PAD + ENTRY_FONT + 2
+            page.insert_text(
+                fitz.Point(pw + SIDEBAR_PAD, header_y),
+                "References",
+                fontname="helv", fontsize=7,
+                color=(0.4, 0.4, 0.4),
+            )
+            # Thin rule under header
+            rule_y = header_y + 4
+            page.draw_line(
+                fitz.Point(pw + SIDEBAR_PAD, rule_y),
+                fitz.Point(pw + SIDEBAR_W - SIDEBAR_PAD, rule_y),
+                color=DIVIDER_COLOR, width=0.5,
+            )
+
+        # ── Draw sidebar entries ─────────────────────────────────────────────
+        cursor_y = HEADER_H + SIDEBAR_PAD
+        for info in annots_on_page:
+            num = global_num[info.index]
+            dot_x = pw + SIDEBAR_PAD + DOT_R
+            dot_y = cursor_y + DOT_R
+
+            # Dot
+            page.draw_circle(fitz.Point(dot_x, dot_y), DOT_R,
+                             color=DOT_COLOR, fill=DOT_COLOR)
+            label = str(num)
+            lfs = 6 if len(label) == 1 else 5
+            tw = fitz.get_text_length(label, fontname="helv", fontsize=lfs)
+            page.insert_text(
+                fitz.Point(dot_x - tw / 2, dot_y + lfs * 0.35),
+                label, fontname="helv", fontsize=lfs, color=(1, 1, 1),
+            )
+
+            # Content text, word-wrapped
+            text_x = pw + SIDEBAR_PAD + DOT_R * 2 + 4
+            max_chars = int((SIDEBAR_W - SIDEBAR_PAD - DOT_R * 2 - 8) / (ENTRY_FONT * 0.55))
+            lines = _wrap_text(info.content or "", max_chars)
+            text_y = cursor_y + ENTRY_FONT
+            for line in lines:
+                page.insert_text(
+                    fitz.Point(text_x, text_y),
+                    line, fontname="helv", fontsize=ENTRY_FONT, color=(0.1, 0.1, 0.1),
+                )
+                text_y += ENTRY_LEAD
+
+            entry_h = max(DOT_R * 2 + 2, len(lines) * ENTRY_LEAD + 2)
+            cursor_y += entry_h + 6  # gap between entries
+
+            # Stop drawing entries if we overflow the page
+            if cursor_y > ph - SIDEBAR_PAD:
+                break
+
+        # ── Draw numbered dots on page content ──────────────────────────────
+        for info in annots_on_page:
+            num = global_num[info.index]
+
+            # Prefer the first new_vertex (shifted tip point) over the raw tip_point
+            # which is in old-PDF coordinates. new_vertices[0] is already remapped.
+            if info.new_vertices and len(info.new_vertices) >= 1:
+                dx, dy = info.new_vertices[0]
+            elif info.tip_point is not None:
+                dx, dy = info.tip_point.x, info.tip_point.y
+            else:
+                # Fall back to center of the annotation rect
+                r = info.new_rect
+                dx, dy = r.x0 + r.width / 2, r.y0 + r.height / 2
+
+            # Offset dot slightly up and right so it sits beside the superscript
+            # without covering it — ~10pt keeps it clearly paired but not overlapping
+            dx += 10
+            dy -= 10
+
+            # Clamp dot to stay within original content area
+            dx = max(DOT_R + 1, min(dx, pw - DOT_R - 1))
+            dy = max(DOT_R + 1, min(dy, ph - DOT_R - 1))
+
+            _draw_number_dot(page, dx, dy, num, radius=DOT_R)
+
+    # ── Write fitz annotations (rect boxes, no callout lines) ───────────────
+    # We skip FreeText annotations entirely — replaced by the sidebar system.
+    # Square annotations still get drawn as they mark regions.
+    for info in active:
+        if info.annot_type[0] != ANNOT_SQUARE:
+            continue
+        if info.page_num >= len(out_doc):
+            continue
+        out_page = out_doc[info.page_num]
         meta = {
-            "author": info.author,
-            "content": info.content,
-            "subject": info.subject,
-            "creation_date": info.creation_date,
+            "author": info.author, "content": info.content,
+            "subject": info.subject, "creation_date": info.creation_date,
             "mod_date": info.mod_date,
         }
-
-        if info.annot_type[0] == ANNOT_FREETEXT:
-            fill = info.colors.get("fill") or (1, 1, 0.6)
-            text_color = info.colors.get("stroke") or (0, 0, 0)
-            # If text color is near-white (luminance > 0.85), it was likely
-            # designed for a dark background in the original and will be
-            # invisible on a light fill — override to black.
-            if text_color and len(text_color) == 3:
-                lum = 0.299 * text_color[0] + 0.587 * text_color[1] + 0.114 * text_color[2]
-                if lum > 0.85:
-                    text_color = (0, 0, 0)
-            annot = out_page.add_freetext_annot(
-                info.new_rect, info.content,
-                fontsize=info.font_size,
-                text_color=text_color,
-                fill_color=fill,
-            )
-            annot.set_rect(info.new_rect)
-            copy_annot_metadata(meta, annot)
-            annot.update()
-
-        elif info.annot_type[0] == ANNOT_SQUARE:
-            annot = out_page.add_rect_annot(info.new_rect)
-            stroke = info.colors.get("stroke") or (1, 0, 0)
-            fill   = info.colors.get("fill")
-            color_dict = {"stroke": stroke}
-            if fill:
-                color_dict["fill"] = fill
-            annot.set_colors(color_dict)
-            bw = info.border.get("width", 2) if info.border else 2
-            annot.set_border(width=bw)
-            copy_annot_metadata(meta, annot)
-            annot.update()
+        annot = out_page.add_rect_annot(info.new_rect)
+        stroke = info.colors.get("stroke") or (1, 0, 0)
+        fill = info.colors.get("fill")
+        color_dict = {"stroke": stroke}
+        if fill:
+            color_dict["fill"] = fill
+        annot.set_colors(color_dict)
+        bw = info.border.get("width", 2) if info.border else 2
+        annot.set_border(width=bw)
+        copy_annot_metadata(meta, annot)
+        annot.update()
 
     out_doc.save(output_path, garbage=4, deflate=True)
     out_doc.close()
