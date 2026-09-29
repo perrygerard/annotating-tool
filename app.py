@@ -131,6 +131,12 @@ def confirm(job_id):
     data = request.get_json(silent=True) or {}
     deleted = set(data.get("deleted_indices", []))
     # Manual dot positions: { "<annotation index>": [x_frac, y_frac] } (fractions of output page)
+    sides = {}
+    for k, v in (data.get("sides") or {}).items():
+        try:
+            sides[int(k)] = 1 if int(v) >= 0 else -1
+        except (ValueError, TypeError):
+            continue
     overrides = {}
     for k, v in (data.get("positions") or {}).items():
         try:
@@ -152,7 +158,7 @@ def confirm(job_id):
         return jsonify({"error": "Source PDF no longer available — please re-process"}), 500
 
     try:
-        write_pdf(all_annots, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides)
+        write_pdf(all_annots, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides, sides=sides)
         # Update the results annotation list to reflect deletions
         results = job["results"]
         results["annotations"] = [

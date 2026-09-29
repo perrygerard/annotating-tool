@@ -405,7 +405,7 @@
 
       <!-- Annotation index list -->
       <div class="detail-header" id="ann-list-header" style="display:none;margin-top:16px;">References</div>
-      <div class="list-hint" id="ann-list-hint" style="display:none;">Drag a numbered pin on the updated page to move it — its point marks the spot it refers to. Moved pins are marked reviewed.</div>
+      <div class="list-hint" id="ann-list-hint" style="display:none;">Drag a numbered pin to move it — its point marks the spot it refers to. Use Flip pin side if it points the wrong way. Changed pins are marked reviewed.</div>
       <div id="ann-list"></div>
 
       <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
@@ -420,7 +420,8 @@
   let activeRect = null;
   let deletedIndices = new Set(); // annotation .index values the user has removed
   let reviewedIndices = new Set(); // annotation .index values marked "Looks Good"
-  const dotOverrides = new Map();  // annotation .index -> [x_frac, y_frac] manual dot positions
+  const dotOverrides = new Map();  // annotation .index -> [x_frac, y_frac] manual pin-point positions
+  const sideOverrides = new Map(); // annotation .index -> +1|-1 manual body side (only when it differs from the default)
 
   const inputAnnotated = document.getElementById('input-annotated');
   const inputNew = document.getElementById('input-new');
@@ -508,6 +509,7 @@
     deletedIndices = new Set();
     reviewedIndices = new Set();
     dotOverrides.clear();
+    sideOverrides.clear();
     updateConfirmButton();
     const rs = document.getElementById('results-screen');
     rs.style.top = document.querySelector('header').getBoundingClientRect().height + 'px';
@@ -619,15 +621,17 @@
             return `M ${px} ${py} L ${t1[0]} ${t1[1]} A ${r} ${r} 0 1 1 ${t2[0]} ${t2[1]} Z`;
           };
           const maxX = vbW * contentFrac;
+          g._side = ann.pin_side || 1; g._defSide = g._side;   // +1 body right of the point, -1 left
           // Place by the POINT; the body is clamped to stay on the page
           g._setPos = (px, py) => {
-            const cx = Math.max(r, Math.min(px + OFF, maxX - r));
+            const cx = Math.max(r, Math.min(px + g._side * OFF, maxX - r));
             const cy = Math.max(r, Math.min(py - OFF, vbH - r));
             path.setAttribute('d', pinD(cx, cy, px, py));
             t.setAttribute('x', cx); t.setAttribute('y', cy);
             g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
             g._px = px; g._py = py;
           };
+          g._setSide = s => { g._side = s; g._setPos(g._px, g._py); };
           g._orig = { px: ann.dot_x * vbW, py: ann.dot_y * vbH };
           g._setPos(g._orig.px, g._orig.py);
 
@@ -651,7 +655,7 @@
             const p = toSvg(ev);
             let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
             // keep the whole pin on the page (not in the sidebar strip)
-            nx = Math.max(r - OFF, Math.min(nx, maxX - r - OFF));
+            nx = Math.max(r - g._side * OFF, Math.min(nx, maxX - r - g._side * OFF));
             ny = Math.max(r + OFF, Math.min(ny, vbH - r + OFF));
             g._setPos(nx, ny);
           });
@@ -821,7 +825,8 @@
         <div class="dc-note">${esc(a.note)}</div>
         <div class="ann-actions">
           <button type="button" class="act-btn act-good">Looks Good</button>
-          <button type="button" class="act-btn secondary act-reset" hidden>Reset position</button>
+          <button type="button" class="act-btn secondary act-flip">⇄ Flip pin side</button>
+          <button type="button" class="act-btn secondary act-reset" hidden>Reset pin</button>
           <button type="button" class="act-btn act-remove">Remove</button>
         </div>
       </div>`;
@@ -829,6 +834,7 @@
     item.querySelector('.act-good').addEventListener('click', () => toggleReviewed(idx));
     item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
     item.querySelector('.act-reset').addEventListener('click', () => resetPosition(idx));
+    item.querySelector('.act-flip').addEventListener('click', () => onMarkerFlipped(idx));
     refreshItem(item, entry);
     return item;
   }
@@ -855,7 +861,8 @@
     good.style.display = removed ? 'none' : '';
     good.textContent = reviewed ? 'Undo — mark as needs review' : 'Looks Good';
     good.classList.toggle('secondary', reviewed);
-    item.querySelector('.act-reset').hidden = !dotOverrides.has(a.index) || removed;
+    item.querySelector('.act-reset').hidden = !(dotOverrides.has(a.index) || sideOverrides.has(a.index)) || removed;
+    item.querySelector('.act-flip').style.display = removed ? 'none' : '';
     const rm = item.querySelector('.act-remove');
     rm.textContent = removed ? 'Restore' : 'Remove';
     rm.classList.toggle('secondary', removed);
@@ -933,12 +940,25 @@
     updateConfirmButton();
   }
 
+  function onMarkerFlipped(idx) {
+    const entry = (window._annRegistry || [])[idx];
+    if (!entry || !entry.newRectEl || !entry.newRectEl._setSide) return;
+    const g = entry.newRectEl, k = entry.ann.index;
+    g._setSide(-g._side);
+    if (g._side === g._defSide) sideOverrides.delete(k); else sideOverrides.set(k, g._side);
+    if (sideOverrides.has(k) && !reviewedIndices.has(k)) { reviewedIndices.add(k); entry.autoReviewed = true; }
+    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+    if (item) refreshItem(item, entry);
+    updateConfirmButton();
+  }
+
   function resetPosition(idx) {
     const entry = (window._annRegistry || [])[idx];
     if (!entry) return;
     const g = entry.newRectEl;
-    if (g && g._setPos) g._setPos(g._orig.px, g._orig.py);
+    if (g && g._setPos) { g._setSide(g._defSide); g._setPos(g._orig.px, g._orig.py); }
     dotOverrides.delete(entry.ann.index);
+    sideOverrides.delete(entry.ann.index);
     if (entry.autoReviewed) { reviewedIndices.delete(entry.ann.index); entry.autoReviewed = false; }
     const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
     if (item) refreshItem(item, entry);
@@ -980,7 +1000,7 @@
     const label = document.getElementById('confirm-btn-label');
     const hint = document.getElementById('confirm-hint');
     const nDel = deletedIndices.size;
-    const nMoved = [...dotOverrides.keys()].filter(k => !deletedIndices.has(k)).length;
+    const nMoved = new Set([...dotOverrides.keys(), ...sideOverrides.keys()].filter(k => !deletedIndices.has(k))).size;
     if (nDel === 0 && nMoved === 0) {
       label.textContent = 'Download Remapped PDF';
       hint.textContent = '';
@@ -1000,11 +1020,11 @@
     document.getElementById('confirm-btn-label').textContent = 'Saving…';
 
     try {
-      if (deletedIndices.size > 0 || dotOverrides.size > 0) {
+      if (deletedIndices.size > 0 || dotOverrides.size > 0 || sideOverrides.size > 0) {
         const res = await fetch(`/confirm/${currentJobId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deleted_indices: [...deletedIndices], positions: Object.fromEntries(dotOverrides) })
+          body: JSON.stringify({ deleted_indices: [...deletedIndices], positions: Object.fromEntries(dotOverrides), sides: Object.fromEntries(sideOverrides) })
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
@@ -1050,6 +1070,7 @@
     deletedIndices = new Set();
     reviewedIndices = new Set();
     dotOverrides.clear();
+    sideOverrides.clear();
     document.getElementById('ann-list').innerHTML = '';
     document.getElementById('ann-list-header').style.display = 'none';
     document.getElementById('confirm-btn-label').textContent = 'Download Remapped PDF';

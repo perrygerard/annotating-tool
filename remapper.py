@@ -1208,9 +1208,11 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 "h": (new_r.y1 - new_r.y0) / ph,
             }
             dot_xy = None
+            pin_side = 1
             if num_by_index.get(info.index) is not None:
                 ddx, ddy = _dot_position(info, pw, ph, dot_r_pg, S_pg)
                 dot_xy = (ddx / tot_w, ddy / ph)
+                pin_side = _pin_side(info)
             # Normalised coords for old (left) side
             old_coords = {
                 "x": old_r.x0 / old_pw,
@@ -1242,6 +1244,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 "old_h": old_coords["h"],
                 "dot_x": dot_xy[0] if dot_xy else None,
                 "dot_y": dot_xy[1] if dot_xy else None,
+                "pin_side": pin_side,
             })
         pages_preview.append({
             "page_num": page_num + 1,
@@ -1302,18 +1305,31 @@ def _scale(pw):
 PIN_L = 1.75   # pin length: distance from body centre to the point, in body radii
 
 
-def _dot_position(info, pw, ph, dot_r, S):
+def _pin_side(info):
+    """Which side of the point the pin body goes: the side the original callout's
+    arrow came from (tip -> text box), i.e. where the reviewer put the box."""
+    v = info.vertices or []
+    if len(v) >= 2:
+        return 1 if v[-1][0] >= v[0][0] else -1
+    r = info.rect
+    tip = _anchor_point(info)
+    return 1 if (r.x0 + r.x1) / 2 >= tip[0] else -1
+
+
+def _dot_position(info, pw, ph, dot_r, S, side=None):
     """Where the pin's POINT goes: the referenced spot, nudged 2*S toward the body
-    (up-right) so the point stops just short of the superscript instead of on it."""
+    so the point stops just short of the superscript instead of on it."""
+    if side is None:
+        side = _pin_side(info)
     x, y = _anchor_point(info)
     g = 2 * S / math.sqrt(2)
-    return x + g, y - g
+    return x + side * g, y - g
 
 
-def _pin_body_center(px, py, r):
-    """Body centre for a pin whose point is (px, py): up and to the right."""
+def _pin_body_center(px, py, r, side=1):
+    """Body centre for a pin whose point is (px, py): up, and to `side`."""
     off = r * PIN_L / math.sqrt(2)
-    return px + off, py - off
+    return px + side * off, py - off
 
 
 def _pin_polygon(cx, cy, px, py, r, steps=48):
@@ -1394,7 +1410,7 @@ def _draw_number_dot(page, cx, cy, number, radius=7):
 
 
 def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
-              overrides=None, draw_dots=True):
+              overrides=None, draw_dots=True, sides=None):
     """Write annotations to a new PDF with a numbered reference sidebar.
 
     Each page is expanded rightward by SIDEBAR_W points. Annotations get:
@@ -1406,6 +1422,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
     # overrides: {annot.index: (x_frac, y_frac)} — manual dot positions, as fractions of
     # the full output page (original page + sidebar) width and of page height.
     overrides = overrides or {}
+    sides = sides or {}          # {annot.index: +1|-1} manual body side (else automatic)
 
     SIDEBAR_BG = (0.97, 0.97, 0.97)   # near-white background
     DIVIDER_COLOR = (0.8, 0.8, 0.8)   # light grey divider
@@ -1514,15 +1531,16 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
 
             if not draw_dots:
                 continue
+            side = sides.get(info.index) or _pin_side(info)
             if info.index in overrides:
                 # Manually placed: the pin's POINT goes exactly where it was dropped
                 fx, fy = overrides[info.index]
                 px, py = fx * (pw + SIDEBAR_W), fy * ph
             else:
-                px, py = _dot_position(info, pw, ph, DOT_R, S)
+                px, py = _dot_position(info, pw, ph, DOT_R, S, side)
 
             # Keep the body on the page; the point stays on the target
-            cx, cy = _pin_body_center(px, py, DOT_R)
+            cx, cy = _pin_body_center(px, py, DOT_R, side)
             cx = max(DOT_R + 1, min(cx, pw - DOT_R - 1))
             cy = max(DOT_R + 1, min(cy, ph - DOT_R - 1))
             _draw_pin(page, cx, cy, px, py, num, DOT_R)
