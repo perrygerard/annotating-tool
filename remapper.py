@@ -38,6 +38,7 @@ class AnnotationInfo:
     subject: str = ""
     annot_id: str = ""
     reply_to: str = ""         # IRT (In-Reply-To) reference
+    font_size: float = 7.0     # FreeText font size from DA string
     popup_rect: Optional[fitz.Rect] = None
     open_state: bool = False
     # Fingerprinting
@@ -816,6 +817,24 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             colors = annot.colors  # {"stroke": rgb_tuple, "fill": rgb_tuple}
             border = annot.border  # {"width": float, "style": str}
 
+            # Extract font size from the DA (Default Appearance) string, e.g. "/Helv 8 Tf"
+            font_size = 7.0
+            try:
+                da = annot.get_oc()  # may not exist
+            except Exception:
+                da = None
+            try:
+                # DA string is accessible via the annotation's xref in the PDF
+                xref = annot.xref
+                da_str = old_doc.xref_get_key(xref, "DA")[1] if xref else ""
+                if da_str:
+                    import re as _re
+                    m = _re.search(r'(\d+(?:\.\d+)?)\s+Tf', da_str)
+                    if m:
+                        font_size = float(m.group(1))
+            except Exception:
+                pass
+
             info = AnnotationInfo(
                 index=i,
                 page_num=page_num,
@@ -834,6 +853,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 reply_to=annot_info_dict.get("irt", ""),
                 open_state=annot.is_open,
                 tip_point=tip_point,
+                font_size=font_size,
             )
 
             # ── Fingerprint strategy ──────────────────────────────────────────
@@ -1219,13 +1239,25 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
         if info.annot_type[0] == ANNOT_FREETEXT:
             fill = info.colors.get("fill") or (1, 1, 0.6)
             text_color = info.colors.get("stroke") or (0, 0, 0)
+            # If text color is near-white (luminance > 0.85), it was likely
+            # designed for a dark background in the original and will be
+            # invisible on a light fill — override to black.
+            if text_color and len(text_color) == 3:
+                lum = 0.299 * text_color[0] + 0.587 * text_color[1] + 0.114 * text_color[2]
+                if lum > 0.85:
+                    text_color = (0, 0, 0)
+            border_color = info.colors.get("stroke")
             annot = out_page.add_freetext_annot(
                 info.new_rect, info.content,
-                fontsize=7,
+                fontsize=info.font_size,
                 text_color=text_color,
                 fill_color=fill,
+                border_color=border_color,
             )
             annot.set_rect(info.new_rect)
+            if info.border:
+                bw = info.border.get("width", 1)
+                annot.set_border(width=bw)
             copy_annot_metadata(meta, annot)
             annot.update()
 
