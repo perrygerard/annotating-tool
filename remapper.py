@@ -20,6 +20,7 @@ from tipmatch import compute_tip_matches, HAS_CV as _HAS_TIPMATCH
 ANNOT_FREETEXT = 2   # Callout
 ANNOT_SQUARE   = 4   # Rectangle overlay
 ANNOT_POPUP    = 15  # Popup (reply thread carrier)
+ANNOT_LINE     = 3   # Arrow line (a callout's extra target)
 
 
 @dataclass
@@ -58,6 +59,8 @@ class AnnotationInfo:
     new_vertices: Optional[list] = None
     new_page_num: Optional[int] = None   # page in the new PDF (defaults to page_num)
     match_note: str = ""
+    parent_index: Optional[int] = None   # set on a 2nd-target arrow: index of its callout
+    sub_label: str = ""                 # 'b', 'c'... shown after the number on secondary pins
 
 
 def get_words_around_rect(page: fitz.Page, target_rect: fitz.Rect, window: int = 10):
@@ -807,6 +810,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     # ── 1. Extract all annotations from old doc ──────────────────────────────
     all_annots = []
     next_index = 0
+    line_annots = []
     for page_num in range(len(old_doc)):
         page = old_doc[page_num]
         for i, annot in enumerate(page.annots()):
@@ -816,6 +820,11 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 continue
             # Only text callouts and rectangles are remapped. Anything else (bare arrow
             # lines, highlights, ...) is reported back instead of being silently dropped.
+            if atype[0] == ANNOT_LINE and annot.vertices and len(annot.vertices) >= 2:
+                line_annots.append((page_num, {"vertices": list(annot.vertices), "flags": annot.flags,
+                                            "colors": annot.colors, "border": annot.border,
+                                            "info": dict(annot.info)}))       # maybe a callout's 2nd target
+                continue
             if atype[0] not in (ANNOT_FREETEXT, ANNOT_SQUARE):
                 results["skipped"].append({"page": page_num + 1, "type": atype[1]})
                 continue
@@ -942,7 +951,50 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             next_index += 1
             all_annots.append(info)
 
-    results["total"] = len(all_annots)
+    # ── 1b. Arrow lines: a second target of the callout they start from ───────
+    def _rect_dist(r, p):
+        dx = max(r.x0 - p[0], 0, p[0] - r.x1); dy = max(r.y0 - p[1], 0, p[1] - r.y1)
+        return math.hypot(dx, dy)
+
+    used_sub = {}
+    for page_num, annot in line_annots:
+        s_pt, e_pt = annot["vertices"][0], annot["vertices"][-1]
+        page = old_doc[page_num]
+        parents = [a for a in all_annots
+                   if a.page_num == page_num and a.annot_type[0] == ANNOT_FREETEXT
+                   and a.parent_index is None]
+        best = None
+        for a in parents:
+            for base, tgt in ((s_pt, e_pt), (e_pt, s_pt)):      # either end may touch the box
+                d = _rect_dist(a.rect, base)
+                if best is None or d < best[0]:
+                    best = (d, a, tgt)
+        if best is not None and best[0] <= 15:
+            _, parent, tip = best
+            parent_index = parent.index
+            sub = chr(ord('b') + used_sub.get(parent.index, 0)); used_sub[parent.index] = used_sub.get(parent.index, 0) + 1
+            content, author = parent.content, parent.author
+        else:
+            # Stray arrow with no callout: keep it as a reference of its own
+            tip, parent_index, sub = e_pt, None, ""
+            content, author = annot["info"].get("content", "") or "Arrow (no comment)", annot["info"].get("title", "")
+        tp = fitz.Point(tip[0], tip[1])
+        fp_text, fp_rect = extract_text_near_point(page, tp)
+        child = AnnotationInfo(
+            index=next_index, page_num=page_num, annot_type=(ANNOT_FREETEXT, "FreeText"),
+            rect=fitz.Rect(tp.x - 6, tp.y - 6, tp.x + 6, tp.y + 6),
+            content=content, vertices=[(tp.x, tp.y), (s_pt[0], s_pt[1])], flags=annot["flags"],
+            colors=annot["colors"], border=annot["border"], author=author, tip_point=tp,
+            parent_index=parent_index, sub_label=sub,
+        )
+        if fp_text and len(fp_text) > 4:
+            child.fingerprint_text = fp_text; child.fingerprint_rect = fp_rect
+            if fp_rect:
+                child.context_before, child.context_after = get_words_around_rect(page, fp_rect)
+        next_index += 1
+        all_annots.append(child)
+
+    results["total"] = len([a for a in all_annots if a.parent_index is None])
 
     # ── 2. Detect content type per page (text vs image) ─────────────────────
     page_is_image = {}
@@ -993,7 +1045,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 info.match_confidence = tm["score"]
                 if tm["score"] < 0.5 and not tm.get("flat"):
                     info.status = "content_removed"
-                    results["content_removed"] += 1
+                    if info.parent_index is None: results["content_removed"] += 1
                 else:
                     info.status = "needs_look"
             info.match_method = "visual"
@@ -1131,7 +1183,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             if not still_exists and not page_image_mode:
                 info.status = "content_removed"
                 info.match_note = "Annotated content no longer exists in new PDF"
-                results["content_removed"] += 1
+                if info.parent_index is None: results["content_removed"] += 1
             else:
                 info.status = "needs_look"
                 info.match_note = "Position could not be determined — kept original"
@@ -1145,12 +1197,12 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             info.status = "needs_look"
 
         # Tally status counters
-        if info.status == "moved":
-            results["moved"] += 1
-        elif info.status == "needs_look":
-            results["needs_look"] += 1
-        elif info.status == "content_removed":
-            pass  # already incremented above when classified
+        if info.parent_index is None:          # 2nd targets are counted with their callout
+            if info.status == "moved":
+                results["moved"] += 1
+            elif info.status == "needs_look":
+                results["needs_look"] += 1
+            # content_removed was already incremented when classified
 
         results["matched" if info.matched else "unmatched"] += 1
         results["annotations"].append({
@@ -1163,6 +1215,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             "confidence": f"{info.match_confidence:.0%}",
             "method": info.match_method,
             "note": info.match_note,
+            "parent_index": info.parent_index,
         })
 
     num_by_index = assign_numbers(all_annots)
@@ -1195,6 +1248,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             old_pw, old_ph = old_page.rect.width, old_page.rect.height
 
         overlay_annots = []
+        auto_pg = _auto_sides(annots_by_page[(page_num, out_pn)], pw, dot_r_pg, S_pg)
         for info in annots_by_page[(page_num, out_pn)]:
             new_r = info.new_rect if info.new_rect else info.rect
             old_r = info.rect  # original position in old PDF
@@ -1209,9 +1263,9 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             dot_xy = None
             pin_side = 1
             if num_by_index.get(info.index) is not None:
-                ddx, ddy = _dot_position(info, pw, ph, dot_r_pg, S_pg)
+                pin_side = auto_pg.get(info.index, _pin_side(info))
+                ddx, ddy = _dot_position(info, pw, ph, dot_r_pg, S_pg, pin_side)
                 dot_xy = (ddx / tot_w, ddy / ph)
-                pin_side = _pin_side(info)
             # Normalised coords for old (left) side
             old_coords = {
                 "x": old_r.x0 / old_pw,
@@ -1244,6 +1298,8 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 "dot_x": dot_xy[0] if dot_xy else None,
                 "dot_y": dot_xy[1] if dot_xy else None,
                 "pin_side": pin_side,
+                "parent_index": info.parent_index,
+                "sub_label": info.sub_label,
             })
         pages_preview.append({
             "page_num": page_num + 1,
@@ -1316,6 +1372,26 @@ def _pin_side(info):
     return 1 if (r.x0 + r.x1) / 2 >= tip[0] else -1
 
 
+def _auto_sides(infos, pw, r, S):
+    """Default pin side per annotation, flipped when the body would land on a
+    neighbouring pin (targets that sit close together)."""
+    placed, out = [], {}
+    order = sorted(infos, key=lambda i: (_anchor_point(i)[1], _anchor_point(i)[0]))
+    for info in order:
+        pref = _pin_side(info)
+        pick = None
+        for side in (pref, -pref):
+            px, py = _dot_position(info, pw, 0, r, S, side)
+            c = _pin_body_center(px, py, r, side)
+            if all(math.hypot(c[0] - o[0], c[1] - o[1]) >= 2.05 * r for o in placed):
+                pick = (side, c); break
+        if pick is None:
+            px, py = _dot_position(info, pw, 0, r, S, pref)
+            pick = (pref, _pin_body_center(px, py, r, pref))
+        out[info.index] = pick[0]; placed.append(pick[1])
+    return out
+
+
 def _dot_position(info, pw, ph, dot_r, S, side=None):
     """Where the pin's POINT goes: the referenced spot, nudged 2*S toward the body
     so the point stops just short of the superscript instead of on it."""
@@ -1353,7 +1429,7 @@ def _draw_pin(page, cx, cy, px, py, number, radius):
     page.draw_polyline([fitz.Point(x, y) for x, y in _pin_polygon(cx, cy, px, py, radius)],
                        color=None, fill=(0, 0, 0), closePath=True)
     label = str(number)
-    fontsize = radius * (1.1 if len(label) == 1 else 0.85)
+    fontsize = radius * {1: 1.1, 2: 0.85}.get(len(label), 0.65)
     tw = fitz.get_text_length(label, fontname="helv", fontsize=fontsize)
     page.insert_text(fitz.Point(cx - tw / 2, cy + fontsize * 0.35), label,
                      fontname="helv", fontsize=fontsize, color=(1, 1, 1))
@@ -1376,12 +1452,22 @@ def _anchor_point(info):
 
 def assign_numbers(all_annots):
     """Give every text (FreeText) annotation a stable global number in reading
-    order (page, then top-to-bottom, left-to-right by dot position).
-    Rectangles get no number. Returns {annot.index: number}."""
+    order (page, then top-to-bottom, left-to-right by dot position). A callout's
+    extra arrow targets share its number. Rectangles get no number.
+    Returns {annot.index: number}."""
     numbered = [a for a in all_annots
-                if a.annot_type[0] == ANNOT_FREETEXT and a.new_rect is not None]
+                if a.annot_type[0] == ANNOT_FREETEXT and a.new_rect is not None
+                and a.parent_index is None]
     numbered.sort(key=lambda a: (_out_page(a), round(_anchor_point(a)[1] / 20), _anchor_point(a)[0]))
-    return {a.index: n + 1 for n, a in enumerate(numbered)}
+    nums = {a.index: n + 1 for n, a in enumerate(numbered)}
+    for a in all_annots:
+        if a.parent_index is not None and a.new_rect is not None and a.parent_index in nums:
+            nums[a.index] = nums[a.parent_index]
+    return nums
+
+
+def _pin_label(info, num):
+    return f"{num}{info.sub_label}"
 
 
 def _wrap_text_measured(text, max_w, fontsize):
@@ -1403,7 +1489,7 @@ def _draw_number_dot(page, cx, cy, number, radius=7):
     """Filled black circle with centered white number at (cx, cy)."""
     page.draw_circle(fitz.Point(cx, cy), radius, color=(0, 0, 0), fill=(0, 0, 0))
     label = str(number)
-    fontsize = radius * (1.1 if len(label) == 1 else 0.85)
+    fontsize = radius * {1: 1.1, 2: 0.85}.get(len(label), 0.65)
     tw = fitz.get_text_length(label, fontname="helv", fontsize=fontsize)
     page.insert_text(fitz.Point(cx - tw / 2, cy + fontsize * 0.35), label,
                      fontname="helv", fontsize=fontsize, color=(1, 1, 1))
@@ -1443,11 +1529,14 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
     numbered.sort(key=lambda a: num_by_index[a.index])
     global_num = {(_out_page(info), info.index): num_by_index[info.index] for info in numbered}
 
-    # Group by page
+    # Group by page: sidebar lists one entry per callout; pins include 2nd targets
     from collections import defaultdict
     page_annots = defaultdict(list)
+    page_pins = defaultdict(list)
     for info in numbered:
-        page_annots[_out_page(info)].append(info)
+        page_pins[_out_page(info)].append(info)
+        if info.parent_index is None:
+            page_annots[_out_page(info)].append(info)
 
     # ── Expand pages and draw ────────────────────────────────────────────────
     for page_num in range(len(out_doc)):
@@ -1526,12 +1615,14 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             cursor_y += max(DOT_R * 2, len(lns) * lead) + gap
 
         # ── Draw numbered dots on page content ──────────────────────────────
-        for info in annots_on_page:
-            num = global_num[(_out_page(info), info.index)]
+        pins_on_page = page_pins.get(page_num, [])
+        auto_sd = _auto_sides(pins_on_page, pw, DOT_R, S) if draw_dots else {}
+        for info in pins_on_page:
+            num = _pin_label(info, global_num[(_out_page(info), info.index)])
 
             if not draw_dots:
                 continue
-            side = sides.get(info.index) or _pin_side(info)
+            side = sides.get(info.index) or auto_sd.get(info.index) or _pin_side(info)
             if info.index in overrides:
                 # Manually placed: the pin's POINT goes exactly where it was dropped
                 fx, fy = overrides[info.index]

@@ -5,319 +5,242 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PDF Annotation Remapper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --ink: #1a1a2e; --ink-mid: #3d3d5c; --ink-light: #7070a0;
-      --bg: #f0eff9; --surface: #ffffff; --accent: #4a6fa5; --accent-dark: #2e4d7a;
-      --accent-light: #e8eef7;
-      --success: #2d7a4f; --success-bg: #e8f5ee; --success-border: #a8d5b8;
-      --warn: #b45309;   --warn-bg: #fef3c7;   --warn-border: #f0c060;
-      --removed: #7c3aed; --removed-bg: #f3f0ff; --removed-border: #c4b0f0;
-      --error: #c0392b; --error-bg: #fdf0ee;
-      --border: #dddde8; --radius: 10px; --shadow: 0 2px 12px rgba(26,26,46,0.08);
+      /* Ink and paper: a cool proofing bench, white sheets, near-black type */
+      --ink: #12161c; --ink-mid: #414b59; --ink-light: #7b8594;
+      --bench: #dde2e8; --bg: #eef1f4; --surface: #ffffff; --paper: #fbfcfd;
+      --line: #d3d9e0; --border: #d3d9e0;
+      --accent: #2340e0; --accent-dark: #1a31b3; --accent-light: #e9edff;   /* selection + focus only */
+      /* Status colours are the pin colours: never reuse them for decoration */
+      --success: #12805c; --success-bg: #e2f4ec; --success-border: #a5d8c3;
+      --warn: #b85f00;    --warn-bg: #fdeed6;    --warn-border: #f0c88b;
+      --removed: #6d3fe0; --removed-bg: #eee9fd; --removed-border: #c9b8f5;
+      --error: #b4381f;   --error-bg: #fbeae6;
+      --radius: 12px; --shadow: 0 1px 2px rgba(18,22,28,.06), 0 8px 24px rgba(18,22,28,.07);
+      --display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+      --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
     }
     html { height: 100%; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); height: 100%; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
+    body { font-family: var(--body); background: var(--bg); color: var(--ink); height: 100%; display: flex; flex-direction: column; overflow: hidden; margin: 0; -webkit-font-smoothing: antialiased; }
+    button { font-family: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* ── Header ── */
-    header { background: var(--ink); color: white; padding: 16px 28px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; position: relative; z-index: 20; }
-    header h1 { font-size: 1.05rem; font-weight: 600; }
-    header p { font-size: 0.77rem; color: rgba(255,255,255,0.5); margin-top: 1px; }
+    header { background: var(--paper); color: var(--ink); padding: 12px 28px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; position: relative; z-index: 20; border-bottom: 1px solid var(--line); }
+    header .brand-mark { flex: 0 0 auto; }
+    header h1 { font-family: var(--display); font-size: 1.12rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+    header p { font-size: 0.74rem; color: var(--ink-light); margin-top: 2px; }
 
     /* ── Upload screen ── */
-    #upload-screen { flex: 1; max-width: 700px; margin: 0 auto; padding: 40px 24px 60px; width: 100%; }
-    .intro { margin-bottom: 28px; }
-    .intro h2 { font-size: 1.35rem; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.02em; }
-    .intro p { font-size: 0.88rem; color: var(--ink-mid); line-height: 1.6; }
-    .steps { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-    .step { display: flex; align-items: center; gap: 6px; font-size: 0.77rem; color: var(--ink-light); background: white; border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; }
-    .step-num { background: var(--accent); color: white; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; flex-shrink: 0; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 26px; margin-bottom: 20px; }
-    .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    @media (max-width: 520px) { .upload-grid { grid-template-columns: 1fr; } }
-    .upload-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 22px 14px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative; }
+    #upload-screen { flex: 1; overflow-y: auto; width: 100%; padding: 56px 24px 72px; }
+    .upload-inner { max-width: 760px; margin: 0 auto; }
+    .intro { margin-bottom: 30px; }
+    .intro h2 { font-family: var(--display); font-size: clamp(1.8rem, 4.4vw, 2.7rem); font-weight: 700; line-height: 1.04; letter-spacing: -0.035em; margin-bottom: 14px; text-wrap: balance; }
+    .intro p { font-size: 1rem; color: var(--ink-mid); line-height: 1.55; max-width: 56ch; }
+    .steps { display: flex; gap: 22px; margin-top: 20px; flex-wrap: wrap; }
+    .step { display: flex; align-items: baseline; gap: 8px; font-size: 0.84rem; color: var(--ink-mid); }
+    .step-num { font-family: var(--mono); font-size: 0.72rem; font-weight: 700; color: var(--ink); background: var(--bench); border-radius: 5px; padding: 1px 6px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 22px; margin-bottom: 20px; }
+    .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; position: relative; }
+    .upload-grid::after { content: '→'; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1rem; box-shadow: 0 0 0 5px var(--surface); pointer-events: none; }
+    @media (max-width: 560px) { .upload-grid { grid-template-columns: 1fr; } .upload-grid::after { display: none; } }
+    .upload-zone { border: 1.5px dashed #b6bfcb; border-radius: var(--radius); background: var(--paper); padding: 34px 16px 26px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s, transform .15s; position: relative; min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: var(--accent-light); }
-    .upload-zone.has-file { border-color: var(--success); background: var(--success-bg); }
+    .upload-zone.has-file { border-style: solid; border-color: var(--success); background: var(--success-bg); }
+    .upload-zone::before { content: attr(data-tag); position: absolute; top: 12px; left: 14px; font-family: var(--mono); font-size: 0.64rem; font-weight: 700; letter-spacing: .1em; color: var(--ink-light); }
     .upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
-    .upload-icon { width: 34px; height: 34px; margin: 0 auto 9px; color: var(--ink-light); }
+    .upload-icon { width: 38px; height: 38px; margin: 0 auto 12px; color: var(--ink-mid); }
     .upload-zone.has-file .upload-icon { color: var(--success); }
-    .upload-label { font-size: 0.77rem; font-weight: 600; color: var(--ink-mid); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
-    .upload-hint { font-size: 0.77rem; color: var(--ink-light); }
-    .upload-filename { font-size: 0.77rem; color: var(--success); font-weight: 600; margin-top: 5px; word-break: break-all; }
-    .submit-btn { display: block; width: 100%; margin-top: 18px; padding: 13px; background: var(--accent); color: white; border: none; border-radius: var(--radius); font-size: 0.93rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-    .submit-btn:hover:not(:disabled) { background: var(--accent-dark); }
-    .submit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .upload-label { font-family: var(--display); font-size: 1.02rem; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); margin-bottom: 3px; }
+    .upload-hint { font-size: 0.8rem; color: var(--ink-light); }
+    .upload-filename { font-family: var(--mono); font-size: 0.72rem; color: var(--success); font-weight: 600; margin-top: 8px; word-break: break-all; }
+    .submit-btn { display: block; width: 100%; margin-top: 18px; padding: 14px; background: var(--ink); color: #fff; border: none; border-radius: var(--radius); font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: background .15s; }
+    .submit-btn:hover:not(:disabled) { background: #2b3440; }
+    .submit-btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .error-box { background: var(--error-bg); color: var(--error); border-radius: 8px; padding: 11px 15px; font-size: 0.84rem; margin-top: 11px; display: none; }
 
     /* ── Progress screen ── */
     #progress-screen { display: none; flex: 1; align-items: center; justify-content: center; padding: 60px 24px; }
-    .progress-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 36px 32px; max-width: 440px; width: 100%; text-align: center; }
-    .progress-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
-    .progress-card p { font-size: 0.82rem; color: var(--ink-light); margin-bottom: 20px; }
-    .progress-bar-wrap { background: var(--border); border-radius: 99px; height: 6px; overflow: hidden; }
-    .progress-bar { height: 100%; background: var(--accent); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
+    .progress-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 36px 32px; max-width: 440px; width: 100%; text-align: center; }
+    .progress-card h3 { font-family: var(--display); font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
+    .progress-card p { font-size: 0.84rem; color: var(--ink-light); margin-bottom: 22px; }
+    .progress-bar-wrap { background: var(--bench); border-radius: 99px; height: 6px; overflow: hidden; }
+    .progress-bar { height: 100%; background: var(--ink); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
 
     /* ── Results screen ── */
     #results-screen { display: none; }
-    #results-screen.visible {
-      display: block;
-      position: fixed;
-      top: 56px; left: 0; right: 0; bottom: 0;
-      overflow: hidden;
-      z-index: 10;
-    }
-    .results-layout {
-      display: flex;
-      flex-direction: row;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-    }
+    #results-screen.visible { display: block; position: fixed; top: 56px; left: 0; right: 0; bottom: 0; overflow: hidden; z-index: 10; }
+    .results-layout { display: flex; flex-direction: row; width: 100%; height: 100%; overflow: hidden; }
 
-    /* Main pages area — fills everything except the sidebar */
-    .pages-panel {
-      flex: 1 1 auto; min-width: 0; overflow-y: auto;
-      padding: 20px 24px 60px;
-      background: #e9e8f3;
-    }
-    .pages-panel-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 16px;
-    }
-    .pages-panel-header h2 { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); }
-    /* Column labels */
-    .col-labels {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-      margin-bottom: 10px;
-    }
-    .col-label {
-      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.07em; color: var(--ink-light);
-      padding: 4px 8px; background: rgba(255,255,255,0.5);
-      border-radius: 4px; text-align: center;
-    }
+    /* Bench: pages sit on it like proof sheets */
+    .pages-panel { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 22px 28px 72px; background: var(--bench); }
+    .pages-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .pages-panel-header h2 { font-family: var(--display); font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); text-transform: none; }
+    .col-labels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 12px; }
+    .col-label { font-family: var(--mono); font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-mid); padding: 6px 10px; background: rgba(255,255,255,0.6); border-radius: 6px; text-align: center; }
 
-    .page-block { margin-bottom: 36px; }
-    .page-num-label { font-size: 0.68rem; font-weight: 600; color: var(--ink-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
-
-    /* Side-by-side pair */
-    .page-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
-    /* Each side: scrollable for tall pages */
+    .page-block { margin-bottom: 40px; }
+    .page-num-label { display: inline-block; font-family: var(--mono); font-size: 0.7rem; font-weight: 700; color: var(--ink); background: var(--surface); border-radius: 6px; padding: 3px 9px; margin-bottom: 10px; letter-spacing: .02em; box-shadow: 0 1px 2px rgba(18,22,28,.08); }
+    .page-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .page-side { min-width: 0; }
-    .page-side-label {
-      font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.06em; color: var(--ink-light); margin-bottom: 4px;
-      display: flex; align-items: center; gap: 5px;
-    }
+    .page-side-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-light); margin-bottom: 4px; display: flex; align-items: center; gap: 5px; }
     .page-side-label .side-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
     .side-dot.old { background: var(--ink-light); }
     .side-dot.new { background: var(--accent); }
 
-    .page-scroll {
-      max-height: 80vh;
-      overflow-y: auto;
-      overflow-x: hidden;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.14);
-      border-radius: 4px;
-      background: white;
-      scroll-behavior: smooth;
-    }
-    .page-frame {
-      position: relative;
-      width: 100%;
-      background: #f8f8f8;
-    }
-    /* img is positioned absolute inside the aspect-ratio box via inline style */
-
-    /* Tall-page fade hint */
-    .page-scroll.is-tall::after {
-      content: ''; display: block; position: sticky;
-      bottom: 0; left: 0; right: 0; height: 28px;
-      background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.8));
-      pointer-events: none;
-    }
-
-    /* Annotation overlays */
+    /* Pages render at full height; the main panel is the only scroller */
+    .page-scroll { overflow: hidden; box-shadow: 0 1px 2px rgba(18,22,28,.10), 0 10px 28px rgba(18,22,28,.13); border-radius: 3px; background: #fff; }
+    .page-frame { position: relative; width: 100%; background: #f8f8f8; }
     .overlay-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
 
-    /* New-side overlays: full status color */
     .ann-rect { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 2px; transition: fill 0.15s; }
-    .ann-rect.moved         { stroke: var(--success); }
-    .ann-rect.needs_look    { stroke: var(--warn); }
-    .ann-rect.content_removed { stroke: var(--removed); }
-    .ann-rect.moved:hover         { fill: rgba(45,122,79,0.12); }
-    .ann-rect.needs_look:hover    { fill: rgba(180,83,9,0.12); }
-    .ann-rect.content_removed:hover { fill: rgba(124,58,237,0.12); }
-    .ann-rect.active { fill: rgba(74,111,165,0.18); stroke: var(--accent); stroke-width: 2.5px; }
+    .ann-rect.moved { stroke: var(--success); } .ann-rect.needs_look { stroke: var(--warn); } .ann-rect.content_removed { stroke: var(--removed); }
+    .ann-rect.active { fill: rgba(35,64,224,0.14); stroke: var(--accent); stroke-width: 2.5px; }
 
-    /* New-side numbered markers (replace outlines) */
+    /* Pins on the updated page */
     .ann-mark { pointer-events: all; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
     .ann-mark.dragging { cursor: grabbing; }
     .ann-mark.dragging path { stroke: #111; stroke-width: 3px; }
     .ann-mark path { fill: #111; stroke: #fff; stroke-width: 1.5px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
-    .ann-mark text { fill: #fff; font-weight: 700; font-family: system-ui, -apple-system, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .ann-mark text { fill: #fff; font-weight: 700; font-family: var(--display); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
     .ann-mark.moved path, .ann-mark.reviewed path { fill: var(--success); }
     .ann-mark.needs_look path      { fill: var(--warn); }
     .ann-mark.content_removed path { fill: var(--removed); }
     .ann-mark.deleted path         { fill: var(--ink-light); }
     .ann-mark:hover path { filter: brightness(1.15); }
-    .ann-mark.active path { stroke: #111; stroke-width: 3px; }
+    .ann-mark.active path { stroke: var(--ink); stroke-width: 3px; }
     .ann-mark-hidden { visibility: hidden; pointer-events: none; }
 
-    /* Old-side overlays: muted ghost style */
+    /* Where the reviewer's box sat on the original: ghosted */
     .ann-rect-old { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 1.5px; stroke-dasharray: 4 3; transition: fill 0.15s; }
-    .ann-rect-old.moved         { stroke: var(--success); opacity: 0.45; }
-    .ann-rect-old.needs_look    { stroke: var(--warn); opacity: 0.45; }
-    .ann-rect-old.content_removed { stroke: var(--removed); opacity: 0.45; }
-    .ann-rect-old.active { opacity: 1; fill: rgba(74,111,165,0.12); stroke: var(--accent); stroke-dasharray: none; }
+    .ann-rect-old.moved { stroke: var(--success); opacity: 0.45; } .ann-rect-old.needs_look { stroke: var(--warn); opacity: 0.45; } .ann-rect-old.content_removed { stroke: var(--removed); opacity: 0.45; }
+    .ann-rect-old.active { opacity: 1; fill: rgba(35,64,224,0.10); stroke: var(--accent); stroke-dasharray: none; }
 
-    /* Right panel — detail sidebar: fixed narrow width */
-    .detail-panel {
-      flex: 0 0 280px; width: 280px; min-width: 0; overflow-y: auto;
-      padding: 16px 12px 60px;
-      background: var(--surface);
-      border-left: 1px solid var(--border);
-      display: flex; flex-direction: column; gap: 0;
-    }
+    /* ── Sidebar ── */
+    .detail-panel { flex: 0 0 320px; width: 320px; min-width: 0; overflow-y: auto; padding: 18px 14px 60px; background: var(--paper); border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 0; }
 
-    /* Summary tiles — 2x2 compact */
-    .summary-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px; }
-    .tile { background: var(--bg); border-radius: 7px; padding: 9px 8px; text-align: center; }
-    .tile-num { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-    .tile-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-light); margin-top: 2px; }
-    .tile.total   .tile-num { color: var(--ink); }
-    .tile.moved   .tile-num { color: var(--success); }
-    .tile.review  .tile-num { color: var(--warn); }
-    .tile.removed .tile-num { color: var(--removed); }
+    /* Filters double as counters */
+    .summary-tiles { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; }
+    .tile { display: flex; align-items: center; gap: 10px; width: 100%; background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 9px 12px; font: inherit; color: inherit; cursor: pointer; text-align: left; transition: background .12s, border-color .12s; }
+    .tile::before { content: ''; width: 9px; height: 9px; border-radius: 50% 50% 50% 1px; background: var(--ink); flex: 0 0 auto; }
+    .tile.moved::before { background: var(--success); } .tile.review::before { background: var(--warn); } .tile.removed::before { background: var(--removed); }
+    .tile:hover { background: var(--bg); }
+    .tile.active { background: var(--surface); border-color: var(--ink); box-shadow: 0 1px 0 var(--ink); }
+    .tile-label { flex: 1; font-size: 0.86rem; font-weight: 600; color: var(--ink); text-transform: none; letter-spacing: 0; }
+    .tile-num { font-family: var(--display); font-size: 1.3rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; color: var(--ink); }
 
-    /* Legend */
-    .legend { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; font-size: 0.69rem; color: var(--ink-mid); }
-    .legend-item { display: flex; align-items: center; gap: 6px; }
-    .legend-swatch { width: 12px; height: 3px; border-radius: 2px; flex-shrink: 0; }
-    .legend-swatch.moved    { background: var(--success); }
-    .legend-swatch.review   { background: var(--warn); }
-    .legend-swatch.removed  { background: var(--removed); }
+    .header-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+    .header-actions[hidden] { display: none; }
+    .header-actions .confirm-hint { margin: 0; min-height: 0; color: var(--ink-light); font-size: 0.76rem; }
+    .header-actions .confirm-btn { width: auto; margin: 0; padding: 9px 18px; }
 
-    /* Confirm + Download */
-    .confirm-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 10px; background: var(--success); color: white; border: none; border-radius: 7px; font-size: 0.82rem; font-weight: 600; cursor: pointer; text-decoration: none; margin-bottom: 4px; }
-    .confirm-btn:hover:not(:disabled) { background: #235e3c; }
+    .confirm-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px; background: var(--ink); color: #fff; border: none; border-radius: 9px; font-size: 0.86rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: background .15s; }
+    .confirm-btn:hover:not(:disabled) { background: #2b3440; }
     .confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .confirm-hint { font-size: 0.67rem; color: var(--ink-light); text-align: center; margin-bottom: 10px; min-height: 1.2em; }
+    .confirm-hint { font-size: 0.7rem; color: var(--ink-light); }
 
-    /* Annotation detail card */
-    .detail-header { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); margin-bottom: 8px; margin-top: 4px; }
-    .detail-card {
-      background: var(--bg); border-radius: 7px;
-      padding: 11px; font-size: 0.74rem; color: var(--ink-mid);
-      line-height: 1.45; display: none;
-    }
-    .detail-card.visible { display: block; }
-    .detail-card .dc-status { margin-bottom: 7px; }
-    .detail-card .dc-content { font-size: 0.71rem; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px; margin-bottom: 7px; font-family: monospace; word-break: break-word; }
-    .detail-card .dc-row { display: flex; justify-content: space-between; gap: 6px; font-size: 0.69rem; margin-bottom: 3px; }
-    .detail-card .dc-row span:first-child { color: var(--ink-light); }
-    .detail-card .dc-row span:last-child { color: var(--ink); font-weight: 500; text-align: right; }
-    .detail-card .dc-note { font-size: 0.67rem; color: var(--ink-light); margin-top: 7px; line-height: 1.4; }
-    .detail-empty { font-size: 0.73rem; color: var(--ink-light); line-height: 1.5; padding: 6px 0; }
+    .detail-header { font-family: var(--mono); font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-light); margin-bottom: 10px; margin-top: 4px; }
+    .list-hint { font-size: 0.72rem; color: var(--ink-light); line-height: 1.45; margin: -2px 0 10px; }
 
-    .badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 99px; font-size: 0.69rem; font-weight: 600; white-space: nowrap; }
-    .badge.moved            { background: var(--success-bg); color: var(--success); }
+    .badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 99px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+    .badge.moved, .badge.reviewed { background: var(--success-bg); color: var(--success); }
     .badge.needs_look       { background: var(--warn-bg);    color: var(--warn); }
     .badge.content_removed  { background: var(--removed-bg); color: var(--removed); }
-    .method-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 0.69rem; font-weight: 500; background: #f0f0f8; color: var(--ink-light); margin-left: 4px; }
+    .badge.deleted  { background: var(--bench); color: var(--ink-light); }
 
-    .reset-btn { display: block; width: 100%; padding: 9px; background: transparent; color: var(--ink-light); border: 1px solid var(--border); border-radius: 8px; font-size: 0.82rem; cursor: pointer; margin-top: 12px; }
+    .reset-btn { display: block; width: 100%; padding: 9px; background: transparent; color: var(--ink-mid); border: 1px solid var(--line); border-radius: 9px; font-size: 0.82rem; font-weight: 500; cursor: pointer; margin-top: 16px; }
     .reset-btn:hover { background: var(--bg); }
 
-    /* Annotation accordion list */
-    .ann-item {
-      border: 1px solid var(--border); border-radius: 9px; margin-bottom: 6px;
-      background: var(--surface); overflow: hidden;
-      transition: border-color 0.12s, box-shadow 0.12s;
-    }
-    .ann-item:hover { border-color: #c9c9d6; }
+    /* Reference list */
+    .ann-item { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; background: var(--surface); overflow: hidden; transition: border-color .12s, box-shadow .12s; }
+    .ann-item[hidden] { display: none; }
+    .ann-item:hover { border-color: #b6bfcb; }
     .ann-item.open { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-    .ann-head {
-      display: flex; align-items: center; gap: 9px; width: 100%;
-      padding: 9px 10px; background: transparent; border: none; cursor: pointer;
-      font: inherit; text-align: left; color: var(--ink);
-    }
-    .ann-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
-    .num-dot {
-      flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
-      background: #111; color: #fff; font-size: 0.68rem; font-weight: 700;
-      display: inline-flex; align-items: center; justify-content: center;
-      font-variant-numeric: tabular-nums;
-    }
-    .ann-status { margin-right: auto; }
-    .ann-chevron { flex: 0 0 auto; color: var(--ink-light); font-size: 0.8rem; transition: transform 0.15s; }
-    .ann-item.open .ann-chevron { transform: rotate(180deg); }
-    .ann-body { padding: 2px 11px 11px; font-size: 0.74rem; color: var(--ink-mid); line-height: 1.45; }
-    .ann-body[hidden] { display: none; }
-    .ann-body .dc-content { font-size: 0.71rem; color: var(--ink); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 8px; margin-bottom: 8px; font-family: ui-monospace, monospace; word-break: break-word; max-height: 140px; overflow-y: auto; }
-    .ann-body .dc-row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.69rem; margin-bottom: 3px; }
-    .ann-body .dc-row span:first-child { color: var(--ink-light); }
-    .ann-body .dc-row span:last-child { color: var(--ink); font-weight: 500; text-align: right; }
-    .ann-body .dc-note { font-size: 0.67rem; color: var(--ink-light); margin: 7px 0 10px; line-height: 1.4; }
-    .list-hint { font-size: 0.67rem; color: var(--ink-light); line-height: 1.4; margin: -2px 0 8px; }
-    .ann-actions { display: flex; flex-direction: column; gap: 6px; }
-    .act-btn { width: 100%; padding: 8px 10px; border: none; border-radius: 7px; font-size: 0.78rem; font-weight: 600; color: #fff; cursor: pointer; }
-    .act-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .act-good   { background: var(--success); }
-    .act-good:hover { background: #235e3c; }
-    .act-remove { background: #b4381f; }
-    .act-remove:hover { background: #962e19; }
-    .act-btn.secondary { background: transparent; color: var(--ink-mid); border: 1px solid var(--border); }
-    .act-btn.secondary:hover { background: var(--bg); }
+    .ann-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 11px; background: transparent; border: none; cursor: pointer; font: inherit; text-align: left; color: var(--ink); }
+    .ann-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 9px; }
+    /* Same shape as the pins on the page: a circle with one sharp corner */
+    .num-dot { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50% 50% 50% 3px; background: #111; color: #fff; font-family: var(--display); font-size: 0.74rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+    .num-dot.n3 { font-size: 0.56rem; letter-spacing: -0.02em; }
     .num-dot.moved, .num-dot.reviewed { background: var(--success); }
     .num-dot.needs_look      { background: var(--warn); }
     .num-dot.content_removed { background: var(--removed); }
     .num-dot.deleted         { background: var(--ink-light); }
+    .ann-status { margin-right: auto; }
+    .ann-chevron { flex: 0 0 auto; color: var(--ink-light); font-size: 0.8rem; transition: transform 0.15s; }
+    .ann-item.open .ann-chevron { transform: rotate(180deg); }
+    .ann-body { padding: 4px 12px 12px; font-size: 0.78rem; color: var(--ink-mid); line-height: 1.5; }
+    .ann-body[hidden] { display: none; }
+    .ann-body .dc-content { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); background: var(--bg); border-radius: 7px; padding: 8px 9px; margin-bottom: 10px; word-break: break-word; max-height: 140px; overflow-y: auto; line-height: 1.5; }
+    .ann-body .dc-row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.72rem; margin-bottom: 3px; }
+    .ann-body .dc-row span:first-child { color: var(--ink-light); }
+    .ann-body .dc-row span:last-child { color: var(--ink); font-weight: 500; text-align: right; }
+    .ann-body .dc-note { font-size: 0.7rem; color: var(--ink-light); margin: 8px 0 10px; line-height: 1.45; }
+    .ann-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .act-btn { flex: 1 1 auto; white-space: nowrap; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; font-size: 0.78rem; font-weight: 600; color: #fff; cursor: pointer; transition: background .12s; }
+    .act-remove { background: transparent; color: var(--error); border-color: #e6bdb4; }
+    .act-remove:hover { background: var(--error-bg); }
+    .act-btn.secondary { background: transparent; color: var(--ink-mid); border-color: var(--line); }
+    .act-btn.secondary:hover { background: var(--bg); }
+    .act-remove.secondary { color: var(--ink-mid); border-color: var(--line); }
+    .loc-chip { font-family: var(--mono); font-size: 0.62rem; font-weight: 700; color: var(--ink-mid); background: var(--bench); border-radius: 99px; padding: 2px 8px; white-space: nowrap; }
+    .loc-row { border-top: 1px dashed var(--line); margin: 10px 0 8px; padding-top: 10px; }
+    .loc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .loc-name { font-size: 0.74rem; color: var(--ink); }
+    .loc-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+    .loc-actions .act-btn { flex: 0 1 auto; padding: 4px 10px; font-size: 0.68rem; }
     .ann-item.deleted .dc-content { text-decoration: line-through; opacity: 0.6; }
-    .badge.reviewed { background: var(--success-bg); color: var(--success); }
-    .badge.deleted  { background: #ececf1; color: var(--ink-light); }
 
-    /* Responsive: stack on narrow */
     @media (max-width: 480px) {
       .results-layout { flex-direction: column; }
-      .detail-panel { flex: none; width: 100%; border-left: none; border-top: 1px solid var(--border); }
+      .detail-panel { flex: none; width: 100%; border-left: none; border-top: 1px solid var(--line); }
     }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
 <body>
 
 <header>
-  <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
-    <rect width="28" height="28" rx="6" fill="rgba(255,255,255,0.12)"/>
-    <rect x="6" y="5" width="12" height="16" rx="1.5" stroke="white" stroke-width="1.5" fill="none"/>
-    <line x1="9" y1="9" x2="15" y2="9" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <line x1="9" y1="12" x2="15" y2="12" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    <circle cx="20" cy="20" r="5" fill="#4a6fa5" stroke="white" stroke-width="1.5"/>
-    <path d="M18.5 20h3M20 18.5v3" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+  <svg class="brand-mark" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+    <path d="M4 26 L4 15 A11 11 0 1 1 15 26 Z" fill="#12161c"/>
+    <circle cx="15" cy="14" r="4.2" fill="#fff"/>
   </svg>
   <div>
     <h1>PDF Annotation Remapper</h1>
-    <p>Automatically move annotations when a PDF gets updated</p>
+    <p>Carry review comments onto a new version of a PDF</p>
+  </div>
+  <div class="header-actions" id="header-actions" hidden>
+    <span class="confirm-hint" id="confirm-hint"></span>
+    <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
+      </svg>
+      <span id="confirm-btn-label">Download Remapped PDF</span>
+    </button>
   </div>
 </header>
 
 <!-- ── Upload screen ── -->
 <div id="upload-screen">
+<div class="upload-inner">
   <div class="intro">
-    <h2>Remap annotations to a new PDF version</h2>
-    <p>Upload your annotated PDF and the new updated version. The tool finds where each annotation moved, repositions callouts and rectangles, and shows you the result on every page.</p>
+    <h2>Put every review comment back on the right spot.</h2>
+    <p>Upload the annotated PDF and its updated version. Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.</p>
     <div class="steps">
-      <div class="step"><span class="step-num">1</span> Upload both PDFs</div>
-      <div class="step"><span class="step-num">2</span> Review annotations on each page</div>
-      <div class="step"><span class="step-num">3</span> Download the remapped PDF</div>
+      <div class="step"><span class="step-num">1</span> Upload both files</div>
+      <div class="step"><span class="step-num">2</span> Check the pins</div>
+      <div class="step"><span class="step-num">3</span> Download</div>
     </div>
   </div>
 
   <div class="card">
     <div class="upload-grid">
-      <div class="upload-zone" id="zone-annotated">
+      <div class="upload-zone" id="zone-annotated" data-tag="BEFORE">
         <input type="file" id="input-annotated" accept=".pdf" />
         <div class="upload-icon">
           <svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
@@ -328,10 +251,10 @@
           </svg>
         </div>
         <div class="upload-label">Annotated PDF</div>
-        <div class="upload-hint">The PDF with existing callouts</div>
+        <div class="upload-hint">Drop the file or click to choose</div>
         <div class="upload-filename" id="name-annotated"></div>
       </div>
-      <div class="upload-zone" id="zone-new">
+      <div class="upload-zone" id="zone-new" data-tag="AFTER">
         <input type="file" id="input-new" accept=".pdf" />
         <div class="upload-icon">
           <svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
@@ -341,21 +264,22 @@
             <path d="M20 23h7" stroke-width="1.6"/>
           </svg>
         </div>
-        <div class="upload-label">New Updated PDF</div>
-        <div class="upload-hint">The revised PDF without annotations</div>
+        <div class="upload-label">Updated PDF</div>
+        <div class="upload-hint">Drop the file or click to choose</div>
         <div class="upload-filename" id="name-new"></div>
       </div>
     </div>
     <div class="error-box" id="error-box"></div>
-    <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Remap Annotations →</button>
+    <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Remap annotations</button>
   </div>
+</div>
 </div>
 
 <!-- ── Progress screen ── -->
 <div id="progress-screen">
   <div class="progress-card">
-    <h3>Processing your PDFs…</h3>
-    <p>Fingerprinting annotations and matching positions in the new document</p>
+    <h3>Matching callouts to the new pages…</h3>
+    <p>Large PDFs can take up to a minute.</p>
     <div class="progress-bar-wrap">
       <div class="progress-bar" id="progress-bar"></div>
     </div>
@@ -372,8 +296,8 @@
         <h2>Pages with annotations</h2>
       </div>
       <div class="col-labels">
-        <div class="col-label">← Original</div>
-        <div class="col-label">Updated →</div>
+        <div class="col-label">Original</div>
+        <div class="col-label">Updated</div>
       </div>
       <!-- Populated by JS -->
     </div>
@@ -381,33 +305,17 @@
     <!-- Sidebar -->
     <div class="detail-panel">
       <!-- Stat tiles -->
-      <div class="summary-tiles">
-        <div class="tile total"><div class="tile-num" id="stat-total">0</div><div class="tile-label">Total</div></div>
-        <div class="tile moved"><div class="tile-num" id="stat-moved">0</div><div class="tile-label">Moved</div></div>
-        <div class="tile review"><div class="tile-num" id="stat-review">0</div><div class="tile-label">Needs look</div></div>
-        <div class="tile removed"><div class="tile-num" id="stat-removed">0</div><div class="tile-label">Removed</div></div>
+      <div class="summary-tiles" role="group" aria-label="Filter references">
+        <button type="button" class="tile total active" data-filter="all" aria-pressed="true"><span class="tile-label">All</span><span class="tile-num" id="stat-total">0</span></button>
+        <button type="button" class="tile moved" data-filter="moved" aria-pressed="false"><span class="tile-label">Moved</span><span class="tile-num" id="stat-moved">0</span></button>
+        <button type="button" class="tile review" data-filter="review" aria-pressed="false"><span class="tile-label">Needs review</span><span class="tile-num" id="stat-review">0</span></button>
+        <button type="button" class="tile removed" data-filter="removed" aria-pressed="false"><span class="tile-label">Removed</span><span class="tile-num" id="stat-removed">0</span></button>
       </div>
-
-      <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
-          <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
-        </svg>
-        <span id="confirm-btn-label">Download Remapped PDF</span>
-      </button>
-      <div class="confirm-hint" id="confirm-hint"></div>
 
       <div class="list-hint" id="skipped-note" style="display:none;"></div>
 
-      <!-- Legend -->
-      <div class="legend">
-        <div class="legend-item"><span class="legend-swatch moved"></span> Moved — repositioned confidently</div>
-        <div class="legend-item"><span class="legend-swatch review"></span> Needs a look — low confidence</div>
-        <div class="legend-item"><span class="legend-swatch removed"></span> Content removed from document</div>
-      </div>
-
       <!-- Annotation index list -->
       <div class="detail-header" id="ann-list-header" style="display:none;margin-top:16px;">References</div>
-      <div class="list-hint" id="ann-list-hint" style="display:none;">Drag a numbered pin to move it — its point marks the spot it refers to. Use Flip pin side if it points the wrong way. Changed pins are marked reviewed.</div>
       <div id="ann-list"></div>
 
       <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
@@ -516,14 +424,8 @@
     const rs = document.getElementById('results-screen');
     rs.style.top = document.querySelector('header').getBoundingClientRect().height + 'px';
     rs.classList.add('visible');
+    document.getElementById('header-actions').hidden = false;
 
-    // Tally by status
-    let moved = 0, review = 0, removed = 0;
-    (results.annotations || []).forEach(a => {
-      if (a.status === 'moved') moved++;
-      else if (a.status === 'content_removed') removed++;
-      else review++;
-    });
     const sk = results.skipped || [];
     const skEl = document.getElementById('skipped-note');
     if (sk.length) {
@@ -531,10 +433,6 @@
       skEl.textContent = `${sk.length} unsupported annotation${sk.length === 1 ? '' : 's'} skipped (${kinds}) on page${new Set(sk.map(x => x.page)).size === 1 ? '' : 's'} ${[...new Set(sk.map(x => x.page))].join(', ')}.`;
       skEl.style.display = '';
     } else { skEl.style.display = 'none'; }
-    document.getElementById('stat-total').textContent  = results.total;
-    document.getElementById('stat-moved').textContent  = moved;
-    document.getElementById('stat-review').textContent = review;
-    document.getElementById('stat-removed').textContent = removed;
 
     // Render page thumbnails with overlays
     const panel = document.getElementById('pages-panel');
@@ -613,10 +511,11 @@
           g.setAttribute('class', 'ann-mark ' + (ann.status || 'moved'));
           const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
           const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          t.setAttribute('font-size', r * (String(ann.number).length > 1 ? 1.05 : 1.3));
-          t.textContent = ann.number;
+          const lbl = String(ann.number) + (ann.sub_label || '');
+          t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
+          t.textContent = lbl;
           const tt = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-          tt.textContent = `Reference ${ann.number} — drag to reposition`;
+          tt.textContent = `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag to reposition`;
           g.appendChild(tt); g.appendChild(path); g.appendChild(t);
           svg.appendChild(g); rects.push(g);
 
@@ -740,19 +639,6 @@
         newSide.rects[i].addEventListener('click', handler);
       });
 
-      // Sync scroll between old and new sides
-      let syncing = false;
-      oldSide.scrollEl.addEventListener('scroll', () => {
-        if (syncing) return; syncing = true;
-        newSide.scrollEl.scrollTop = oldSide.scrollEl.scrollTop;
-        syncing = false;
-      });
-      newSide.scrollEl.addEventListener('scroll', () => {
-        if (syncing) return; syncing = true;
-        oldSide.scrollEl.scrollTop = newSide.scrollEl.scrollTop;
-        syncing = false;
-      });
-
       pair.appendChild(oldSide.sideEl);
       pair.appendChild(newSide.sideEl);
       block.appendChild(pair);
@@ -767,13 +653,14 @@
     listEl.innerHTML = '';
     const numbered = annRegistry
       .map((entry, idx) => ({ entry, idx }))
-      .filter(x => x.entry.ann.number != null)
+          .filter(x => x.entry.ann.number != null && x.entry.ann.parent_index == null)
       .sort((a, b) => a.entry.ann.number - b.entry.ann.number);
     if (numbered.length) {
       listHeader.style.display = '';
-      document.getElementById('ann-list-hint').style.display = '';
       numbered.forEach(({ entry, idx }) => listEl.appendChild(buildAnnItem(entry, idx)));
     }
+    activeFilter = 'all';
+    updateFilters();
 
     // Load page images — eager for first 4, lazy (observer) for the rest.
     // Observer root is the pages panel so it fires within its scroll container.
@@ -794,36 +681,91 @@
   }
 
   // ── Annotation selection ───────────────────────────────────────────────────
-  let activeOldRect = null, activeNewRect = null;
+  let activeEls = [];
 
-  function scrollRectIntoScrollEl(rectEl, scrollEl) {
-    const svgEl = rectEl.closest('svg');
-    const frameEl = svgEl ? svgEl.closest('.page-frame') : null;
-    if (!frameEl || !scrollEl) return;
-    const frameH = frameEl.scrollHeight;
-    const vb = svgEl.viewBox.baseVal;
-    const annY = parseFloat(rectEl.getAttribute('y'));
-    const annH = parseFloat(rectEl.getAttribute('height'));
-    if (vb && vb.height && frameH) {
-      const pixY = (annY / vb.height) * frameH;
-      const pixH = (annH / vb.height) * frameH;
-      scrollEl.scrollTop = Math.max(0, pixY - scrollEl.clientHeight / 2 + pixH / 2);
-    }
+  // The pages panel is the only scroller now: bring the selected annotation to its middle.
+  function scrollToAnnotation(entry) {
+    const panel = document.getElementById('pages-panel');
+    const hidden = entry.newRectEl.classList.contains('ann-mark-hidden');
+    const el = hidden ? entry.oldRectEl : entry.newRectEl;      // rectangles only exist on the old side
+    if (!panel || !el) return;
+    const r = el.getBoundingClientRect(), pr = panel.getBoundingClientRect();
+    const top = panel.scrollTop + (r.top - pr.top) - panel.clientHeight / 2 + r.height / 2;
+    panel.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }
 
   function methodLabelFor(m) {
     return m === 'visual' ? '🖼 Visual match' : m === 'position' ? '📌 Position kept' : '🔤 Text match';
   }
 
+  // A callout may point at 2+ places: the primary entry plus its second-target pins
+  function groupOf(idx) {
+    const reg = window._annRegistry || [];
+    const e = reg[idx]; if (!e) return [];
+    const pi = e.ann.parent_index != null ? e.ann.parent_index : e.ann.index;
+    return reg.map((x, i) => ({ e: x, i }))
+      .filter(x => x.e.ann.index === pi || x.e.ann.parent_index === pi)
+      .sort((a, b) => (a.e.ann.sub_label || '').localeCompare(b.e.ann.sub_label || ''));
+  }
+  function primaryIdx(idx) {
+    const g = groupOf(idx);
+    return g.length ? g[0].i : idx;
+  }
+  function itemOf(idx) { return document.querySelector(`.ann-item[data-idx="${primaryIdx(idx)}"]`); }
+  function refreshGroup(idx) {
+    const p = primaryIdx(idx), item = itemOf(idx);
+    if (item) refreshItem(item, window._annRegistry[p]);
+    updateFilters();
+  }
+  // Filter buttons double as live counters
+  let activeFilter = 'all';
+  function updateFilters() {
+    const items = [...document.querySelectorAll('.ann-item')];
+    const n = { all: items.length, moved: 0, review: 0, removed: 0 };
+    items.forEach(it => { n[it.dataset.bucket] = (n[it.dataset.bucket] || 0) + 1; });
+    document.getElementById('stat-total').textContent = n.all;
+    document.getElementById('stat-moved').textContent = n.moved;
+    document.getElementById('stat-review').textContent = n.review;
+    document.getElementById('stat-removed').textContent = n.removed;
+    document.querySelectorAll('.tile[data-filter]').forEach(t => {
+      const on = t.dataset.filter === activeFilter;
+      t.classList.toggle('active', on); t.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    items.forEach(it => { it.hidden = activeFilter !== 'all' && it.dataset.bucket !== activeFilter; });
+  }
+  function setFilter(f) { activeFilter = f; updateFilters(); }
+  document.querySelectorAll('.tile[data-filter]').forEach(t => t.addEventListener('click', () => setFilter(t.dataset.filter)));
+  const RANK = { needs_look: 4, content_removed: 3, moved: 2, reviewed: 1, deleted: 0 };
+  function memberState(e) {
+    const k = e.ann.index;
+    return deletedIndices.has(k) ? 'deleted' : reviewedIndices.has(k) ? 'reviewed' : (e.ann.status || 'moved');
+  }
+
   function buildAnnItem(entry, idx) {
     const a = entry.ann;
+    const group = groupOf(idx);
+    const extra = group.slice(1);
     const item = document.createElement('div');
     item.className = 'ann-item';
     item.dataset.idx = idx;
     const bodyId = 'ann-body-' + idx;
+    const locRows = extra.map(m => `
+        <div class="loc-row" data-loc="${m.i}">
+          <div class="loc-top">
+            <span class="loc-name">Second location <b>${esc(a.number)}${esc(m.e.ann.sub_label)}</b> · page ${esc(m.e.pg.new_page_num || m.e.pg.page_num)}</span>
+            <span class="badge loc-status"></span>
+          </div>
+          <div class="dc-note">${esc(m.e.ann.note)}</div>
+          <div class="loc-actions">
+            <button type="button" class="act-btn secondary loc-show">Show</button>
+            <button type="button" class="act-btn secondary loc-flip">⇄ Flip pin</button>
+            <button type="button" class="act-btn secondary loc-reset" hidden>Reset pin</button>
+          </div>
+        </div>`).join('');
     item.innerHTML = `
       <button type="button" class="ann-head" aria-expanded="false" aria-controls="${bodyId}">
-        <span class="num-dot">${esc(a.number)}</span>
+        <span class="num-dot${String(a.number).length > 2 ? ' n3' : ''}">${esc(a.number)}</span>
+        ${extra.length ? `<span class="loc-chip">${group.length} places</span>` : ''}
         <span class="badge ann-status"></span>
         <span class="ann-chevron" aria-hidden="true">▾</span>
       </button>
@@ -834,18 +776,23 @@
         <div class="dc-row"><span>Confidence</span><span>${esc(a.confidence)}</span></div>
         <div class="dc-row"><span>Match</span><span>${esc(methodLabelFor(a.method))}</span></div>
         <div class="dc-note">${esc(a.note)}</div>
+        ${locRows}
         <div class="ann-actions">
-          <button type="button" class="act-btn act-good">Looks Good</button>
           <button type="button" class="act-btn secondary act-flip">⇄ Flip pin side</button>
           <button type="button" class="act-btn secondary act-reset" hidden>Reset pin</button>
           <button type="button" class="act-btn act-remove">Remove</button>
         </div>
       </div>`;
     item.querySelector('.ann-head').addEventListener('click', () => toggleItem(idx));
-    item.querySelector('.act-good').addEventListener('click', () => toggleReviewed(idx));
     item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
     item.querySelector('.act-reset').addEventListener('click', () => resetPosition(idx));
     item.querySelector('.act-flip').addEventListener('click', () => onMarkerFlipped(idx));
+    item.querySelectorAll('.loc-row').forEach(row => {
+      const ci = Number(row.dataset.loc);
+      row.querySelector('.loc-show').addEventListener('click', () => selectAnnotation(ci));
+      row.querySelector('.loc-flip').addEventListener('click', () => onMarkerFlipped(ci));
+      row.querySelector('.loc-reset').addEventListener('click', () => resetPosition(ci));
+    });
     refreshItem(item, entry);
     return item;
   }
@@ -853,29 +800,42 @@
   // Sync badge + button labels with the item's state (removed / reviewed / matcher status)
   function refreshItem(item, entry) {
     const a = entry.ann;
+    const group = groupOf(Number(item.dataset.idx));
     const removed = deletedIndices.has(a.index);
-    const reviewed = reviewedIndices.has(a.index);
-    const state = removed ? 'deleted' : reviewed ? 'reviewed' : (a.status || 'moved');
-    const label = removed ? 'Removed' : reviewed ? '✓ Reviewed' : (STATUS_LABELS[a.status] || a.status);
+    const STATES = ['moved', 'needs_look', 'content_removed', 'reviewed', 'deleted'];
+    // Each pin takes its own state's colour; the header shows the worst of the group
+    let worst = null;
+    group.forEach(m => {
+      const st = memberState(m.e);
+      if (worst === null || RANK[st] > RANK[worst]) worst = st;
+      if (m.e.newRectEl && m.e.newRectEl.classList.contains('ann-mark')) {
+        STATES.forEach(c => m.e.newRectEl.classList.remove(c)); m.e.newRectEl.classList.add(st);
+      }
+    });
+    const state = removed ? 'deleted' : worst;
+    const label = removed ? 'Removed' : state === 'reviewed' ? '✓ Adjusted' : (STATUS_LABELS[state] || state);
     const badge = item.querySelector('.ann-status');
     badge.className = 'badge ann-status ' + state;
     badge.textContent = label;
     item.classList.toggle('deleted', removed);
-    // Colour the sidebar number dot and the page marker to match the state
-    const STATES = ['moved', 'needs_look', 'content_removed', 'reviewed', 'deleted'];
+    item.dataset.bucket = (state === 'deleted' || state === 'content_removed') ? 'removed' : state === 'needs_look' ? 'review' : 'moved';
     const dot = item.querySelector('.num-dot');
     STATES.forEach(c => dot.classList.remove(c)); dot.classList.add(state);
-    if (entry.newRectEl && entry.newRectEl.classList.contains('ann-mark')) {
-      STATES.forEach(c => entry.newRectEl.classList.remove(c)); entry.newRectEl.classList.add(state);
-    }
-    const good = item.querySelector('.act-good');
-    good.style.display = removed ? 'none' : '';
-    good.textContent = reviewed ? 'Undo — mark as needs review' : 'Looks Good';
-    good.classList.toggle('secondary', reviewed);
+    // second-location rows
+    item.querySelectorAll('.loc-row').forEach(row => {
+      const m = group.find(x => x.i === Number(row.dataset.loc)); if (!m) return;
+      const st = memberState(m.e), k = m.e.ann.index;
+      const b = row.querySelector('.loc-status');
+      b.className = 'badge loc-status ' + st;
+      b.textContent = st === 'deleted' ? 'Removed' : st === 'reviewed' ? '✓ Adjusted' : (STATUS_LABELS[st] || st);
+      row.querySelector('.loc-reset').hidden = !(dotOverrides.has(k) || sideOverrides.has(k)) || removed;
+      row.querySelector('.loc-flip').style.display = removed ? 'none' : '';
+    });
     item.querySelector('.act-reset').hidden = !(dotOverrides.has(a.index) || sideOverrides.has(a.index)) || removed;
     item.querySelector('.act-flip').style.display = removed ? 'none' : '';
+    item.querySelector('.act-flip').textContent = group.length > 1 ? `⇄ Flip pin ${a.number}` : '⇄ Flip pin side';
     const rm = item.querySelector('.act-remove');
-    rm.textContent = removed ? 'Restore' : 'Remove';
+    rm.textContent = removed ? 'Restore' : (group.length > 1 ? 'Remove both' : 'Remove');
     rm.classList.toggle('secondary', removed);
   }
 
@@ -901,32 +861,25 @@
   }
 
   function clearActiveRects() {
-    if (activeOldRect) activeOldRect.classList.remove('active');
-    if (activeNewRect) activeNewRect.classList.remove('active');
-    activeOldRect = null; activeNewRect = null;
+    activeEls.forEach(el => el.classList.remove('active'));
+    activeEls = [];
   }
 
   function selectAnnotation(idx) {
     const registry = window._annRegistry || [];
     const entry = registry[idx];
     if (!entry) return;
-    const { oldRectEl, newRectEl, oldScrollEl, newScrollEl } = entry;
-
     clearActiveRects();
-    activeOldRect = oldRectEl;
-    activeNewRect = newRectEl;
-    oldRectEl.classList.add('active');
-    newRectEl.classList.add('active');
-
-    // Expand this reference in the sidebar (rectangles without a number have no list item)
-    setExpanded(idx, true);
-    const listItem = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+    // Highlight every pin of the reference (both places), scroll to the one asked for
+    groupOf(idx).forEach(m => {
+      [m.e.oldRectEl, m.e.newRectEl].forEach(el => { if (el) { el.classList.add('active'); activeEls.push(el); } });
+    });
+    const p = primaryIdx(idx);
+    let listItem = document.querySelector(`.ann-item[data-idx="${p}"]`);
+    if (listItem && listItem.hidden) { setFilter('all'); }
+    setExpanded(p, true);
     if (listItem) listItem.scrollIntoView({ block: 'nearest' });
-
-    // Scroll both sides to center the annotation (use new side position)
-    scrollRectIntoScrollEl(newRectEl, newScrollEl);
-    scrollRectIntoScrollEl(oldRectEl, oldScrollEl);
-    newScrollEl.closest('.page-block')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    scrollToAnnotation(entry);
   }
 
   function esc(s) {
@@ -946,8 +899,7 @@
     dotOverrides.set(annIndex, [xf, yf]);
     // Placing a dot by hand is a human confirmation: mark it reviewed
     if (!reviewedIndices.has(annIndex)) { reviewedIndices.add(annIndex); entry.autoReviewed = true; }
-    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
-    if (item) refreshItem(item, entry);
+    refreshGroup(idx);
     updateConfirmButton();
   }
 
@@ -958,8 +910,7 @@
     g._setSide(-g._side);
     if (g._side === g._defSide) sideOverrides.delete(k); else sideOverrides.set(k, g._side);
     if (sideOverrides.has(k) && !reviewedIndices.has(k)) { reviewedIndices.add(k); entry.autoReviewed = true; }
-    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
-    if (item) refreshItem(item, entry);
+    refreshGroup(idx);
     updateConfirmButton();
   }
 
@@ -971,38 +922,30 @@
     dotOverrides.delete(entry.ann.index);
     sideOverrides.delete(entry.ann.index);
     if (entry.autoReviewed) { reviewedIndices.delete(entry.ann.index); entry.autoReviewed = false; }
-    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
-    if (item) refreshItem(item, entry);
+    refreshGroup(idx);
     updateConfirmButton();
   }
 
-  // ── Review / delete / restore annotations ─────────────────────────────────
-  function toggleReviewed(idx) {
-    const entry = (window._annRegistry || [])[idx];
-    if (!entry) return;
-    const k = entry.ann.index;
-    if (reviewedIndices.has(k)) reviewedIndices.delete(k); else reviewedIndices.add(k);
-    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
-    if (item) refreshItem(item, entry);
-  }
-
+  // ── Delete / restore annotations (apply to every place of a reference) ──
   function toggleDelete(idx, annIndex) {
-    const entry = (window._annRegistry || [])[idx];
-    if (!entry) return;
-    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
-
-    if (deletedIndices.has(annIndex)) {
-      deletedIndices.delete(annIndex);
-      if (entry.newRectEl) entry.newRectEl.style.display = '';
-      if (entry.oldRectEl) entry.oldRectEl.style.display = '';
-    } else {
-      deletedIndices.add(annIndex);
-      reviewedIndices.delete(annIndex);
-      if (entry.newRectEl) entry.newRectEl.style.display = 'none';
-      if (entry.oldRectEl) entry.oldRectEl.style.display = 'none';
-      if (activeNewRect === entry.newRectEl) clearActiveRects();
-    }
-    if (item) refreshItem(item, entry);
+    const group = groupOf(idx);
+    if (!group.length) return;
+    const restoring = deletedIndices.has(annIndex);
+    group.forEach(m => {
+      const k = m.e.ann.index;
+      if (restoring) {
+        deletedIndices.delete(k);
+        if (m.e.newRectEl) m.e.newRectEl.style.display = '';
+        if (m.e.oldRectEl) m.e.oldRectEl.style.display = '';
+      } else {
+        deletedIndices.add(k);
+        reviewedIndices.delete(k);
+        if (m.e.newRectEl) m.e.newRectEl.style.display = 'none';
+        if (m.e.oldRectEl) m.e.oldRectEl.style.display = 'none';
+      }
+    });
+    if (!restoring) clearActiveRects();
+    refreshGroup(idx);
     updateConfirmButton();
   }
 
@@ -1010,8 +953,9 @@
     const btn = document.getElementById('confirm-btn');
     const label = document.getElementById('confirm-btn-label');
     const hint = document.getElementById('confirm-hint');
-    const nDel = deletedIndices.size;
-    const nMoved = new Set([...dotOverrides.keys(), ...sideOverrides.keys()].filter(k => !deletedIndices.has(k))).size;
+    const primaryOf = k => { const e = (window._annRegistry || []).find(x => x.ann.index === k); return e && e.ann.parent_index != null ? e.ann.parent_index : k; };
+    const nDel = new Set([...deletedIndices].map(primaryOf)).size;
+    const nMoved = new Set([...dotOverrides.keys(), ...sideOverrides.keys()].filter(k => !deletedIndices.has(k))).size;   // pins repositioned
     if (nDel === 0 && nMoved === 0) {
       label.textContent = 'Download Remapped PDF';
       hint.textContent = '';
@@ -1071,13 +1015,14 @@
 
   function resetForm() {
     document.getElementById('results-screen').classList.remove('visible');
+    document.getElementById('header-actions').hidden = true;
     document.getElementById('upload-screen').style.display = 'block';
-    document.getElementById('pages-panel').innerHTML = '<h2>Pages with annotations</h2>';
+    document.getElementById('pages-panel').innerHTML = '<div class="pages-panel-header"><h2>Pages with annotations</h2></div><div class="col-labels"><div class="col-label">Original</div><div class="col-label">Updated</div></div>';
     ['zone-annotated','zone-new'].forEach(id => document.getElementById(id).classList.remove('has-file'));
     ['name-annotated','name-new'].forEach(id => document.getElementById(id).textContent = '');
     inputAnnotated.value = ''; inputNew.value = '';
     submitBtn.disabled = true; currentJobId = null;
-    activeRect = null; activeOldRect = null; activeNewRect = null;
+    activeEls = [];
     deletedIndices = new Set();
     reviewedIndices = new Set();
     dotOverrides.clear();

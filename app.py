@@ -171,7 +171,7 @@ def confirm(job_id):
         return jsonify({"error": str(e)}), 500
 
 
-def _render_page_png(pdf_path, page_num, target_width_px=300):
+def _render_page_png(pdf_path, page_num, target_width_px=640, max_height_px=8000):
     """Render a PDF page scaled so its width fits target_width_px."""
     doc = fitz.open(pdf_path)
     try:
@@ -179,7 +179,7 @@ def _render_page_png(pdf_path, page_num, target_width_px=300):
             return None
         page = doc[page_num - 1]
         # Scale so the rendered width == target_width_px regardless of PDF dimensions
-        scale = target_width_px / page.rect.width
+        scale = min(target_width_px / page.rect.width, max_height_px / page.rect.height)
         mat = fitz.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         return pix.tobytes("png")
