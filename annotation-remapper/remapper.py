@@ -2,10 +2,14 @@
 PDF Annotation Remapper v2
 Remaps callout and rectangle annotations from an old PDF to a new version,
 preserving metadata (author, dates, reply threads, review status).
+
+Supports both live-text PDFs (text fingerprinting) and image/bitmap PDFs
+(visual patch matching via pixel correlation). Detection is automatic.
 """
 
 import fitz  # PyMuPDF
 import re
+import math
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -45,6 +49,7 @@ class AnnotationInfo:
     # Results
     matched: bool = False
     match_confidence: float = 0.0
+    match_method: str = "text"  # "text" | "visual" | "position"
     status: str = "needs_look"  # "moved" | "needs_look" | "content_removed"
     new_rect: Optional[fitz.Rect] = None
     new_vertices: Optional[list] = None
@@ -201,6 +206,564 @@ def find_text_in_page(page: fitz.Page, fingerprint_text: str, key_words: list,
     return hit_rects[0], 0.2
 
 
+# ── Visual / image-based fingerprinting ─────────────────────────────────────
+
+def is_image_page(page: fitz.Page) -> bool:
+    """
+    Return True if this page is primarily raster content (a scanned or
+    JPG-embedded page) rather than live text.
+    We check both: (a) very little extractable text outside annotations, and
+    (b) embedded images.
+
+    FreeText annotations render their content as text in the page text stream,
+    so we need to exclude annotation text from the count.
+    """
+    images = page.get_images(full=False)
+    if not images:
+        return False  # no images — can't be primarily raster
+    # Page has images. Check if extractable text is mostly from annotation content.
+    full_text = page.get_text().strip()
+    # Count chars from all annotation content strings
+    annot_chars = sum(
+        len(ann.info.get("content", "").strip())
+        for ann in page.annots()
+    )
+    # If nearly all text is annotation-sourced, treat as image page
+    if annot_chars > 0 and len(full_text) < annot_chars * 1.4:
+        return True
+    # Still has significant non-annotation text
+    non_annot_chars = max(0, len(full_text) - annot_chars)
+    return non_annot_chars <= 60
+
+
+def render_crop(page: fitz.Page, rect: fitz.Rect, scale: float = 2.0) -> Optional[fitz.Pixmap]:
+    """
+    Render a cropped region of a page at `scale` times PDF-point resolution.
+    Returns None if the rect is empty or out of bounds.
+    """
+    clipped = rect & page.rect  # intersect with page bounds
+    if clipped.is_empty:
+        return None
+    mat = fitz.Matrix(scale, scale)
+    try:
+        pix = page.get_pixmap(matrix=mat, clip=clipped, alpha=False)
+        return pix
+    except Exception:
+        return None
+
+
+def pixmap_to_grayscale_list(pix: fitz.Pixmap) -> list:
+    """Convert a pixmap to a flat list of grayscale values (0–255)."""
+    # Convert to grayscale in-place if needed
+    if pix.n > 1:
+        gray = fitz.Pixmap(fitz.csGRAY, pix)
+    else:
+        gray = pix
+    samples = gray.samples  # bytes
+    return list(samples)
+
+
+def downsample_pixels(pixels: list, src_w: int, src_h: int, dst_w: int = 16, dst_h: int = 16) -> list:
+    """Bilinear-ish downsampling to a fixed-size thumbnail for comparison."""
+    out = []
+    for gy in range(dst_h):
+        for gx in range(dst_w):
+            # Map back to source pixel
+            sx = int(gx * src_w / dst_w)
+            sy = int(gy * src_h / dst_h)
+            # Clamp
+            sx = min(sx, src_w - 1)
+            sy = min(sy, src_h - 1)
+            out.append(pixels[sy * src_w + sx])
+    return out
+
+
+def pixel_hash(pix: fitz.Pixmap, size: int = 16) -> list:
+    """
+    Compute a simple perceptual hash: downsample to size×size grayscale,
+    return list of 0/1 values (above/below median).
+    """
+    gray_pixels = pixmap_to_grayscale_list(pix)
+    thumb = downsample_pixels(gray_pixels, pix.width, pix.height, size, size)
+    median = sorted(thumb)[len(thumb) // 2]
+    return [1 if v >= median else 0 for v in thumb]
+
+
+def hamming_similarity(h1: list, h2: list) -> float:
+    """Return similarity 0–1 based on Hamming distance between two hashes."""
+    if len(h1) != len(h2) or not h1:
+        return 0.0
+    matches = sum(a == b for a, b in zip(h1, h2))
+    return matches / len(h1)
+
+
+def ncc_similarity(pix1: fitz.Pixmap, pix2: fitz.Pixmap) -> float:
+    """
+    Normalized cross-correlation between two pixmaps after downsampling to 16×16.
+    Returns value 0–1 (1 = identical).
+    """
+    if pix1 is None or pix2 is None:
+        return 0.0
+    g1 = pixmap_to_grayscale_list(pix1)
+    g2 = pixmap_to_grayscale_list(pix2)
+    # Downsample both to 16×16
+    t1 = downsample_pixels(g1, pix1.width, pix1.height, 16, 16)
+    t2 = downsample_pixels(g2, pix2.width, pix2.height, 16, 16)
+    n = len(t1)
+    mean1 = sum(t1) / n
+    mean2 = sum(t2) / n
+    num = sum((a - mean1) * (b - mean2) for a, b in zip(t1, t2))
+    den1 = math.sqrt(sum((a - mean1) ** 2 for a in t1))
+    den2 = math.sqrt(sum((b - mean2) ** 2 for b in t2))
+    if den1 < 1e-6 or den2 < 1e-6:
+        return 0.0
+    ncc = num / (den1 * den2)
+    return (ncc + 1.0) / 2.0  # map [-1,1] → [0,1]
+
+
+def detect_removal_boundary(old_page: fitz.Page, new_page: fitz.Page,
+                            scale: float = 0.1) -> tuple:
+    """
+    Find where content was removed between old and new page, and the shift amount.
+
+    Strategy: render both pages without annotations, compare column-by-column
+    running similarity, find the y-transition where old rows stop matching
+    new rows at the same position and start matching offset rows.
+
+    Returns (boundary_y, shift_y) in PDF points:
+      - boundary_y: approximate y in old PDF where the content shift begins
+      - shift_y: how much content below boundary_y has shifted (negative = upward)
+    Returns (None, 0) if no significant shift is detected.
+    """
+    mat = fitz.Matrix(scale, scale)
+    try:
+        old_pix = old_page.get_pixmap(matrix=mat, alpha=False, annots=False)
+        new_pix = new_page.get_pixmap(matrix=mat, alpha=False, annots=False)
+    except Exception:
+        return (None, 0)
+
+    oh, ow = old_pix.height, old_pix.width
+    nh, nw = new_pix.height, new_pix.width
+
+    old_bytes = bytearray(old_pix.samples)
+    new_bytes = bytearray(new_pix.samples)
+    n_ch = old_pix.n
+
+    def row_mean(data, row, w, ch):
+        s = row * w * ch
+        vals = data[s:s + w * ch]
+        return sum(vals) / len(vals) if vals else 128.0
+
+    # Build row fingerprints for both pages
+    old_rows = [row_mean(old_bytes, r, ow, n_ch) for r in range(oh)]
+    new_rows = [row_mean(new_bytes, r, nw, n_ch) for r in range(nh)]
+
+    # For each old row, find what new row it matches best (within search window)
+    SEARCH_WINDOW = int(oh * 0.7)
+
+    # Find the shift at the bottom half of the page — that gives us the net removed height
+    bottom_old = range(max(0, oh * 2 // 3), oh, max(1, oh // 20))
+    shift_votes_bottom = []
+    for old_r in bottom_old:
+        best_r = old_r
+        best_d = float('inf')
+        for new_r in range(max(0, old_r - SEARCH_WINDOW), min(nh, old_r + 10)):
+            d = abs(old_rows[old_r] - new_rows[new_r])
+            if d < best_d:
+                best_d = d
+                best_r = new_r
+        if best_d < 8:
+            shift_votes_bottom.append(best_r - old_r)
+
+    # Find the shift at the top third of the page — should be ~0 if removal is in middle
+    top_old = range(0, oh // 3, max(1, oh // 20))
+    shift_votes_top = []
+    for old_r in top_old:
+        best_r = old_r
+        best_d = float('inf')
+        for new_r in range(max(0, old_r - 10), min(nh, old_r + 10)):
+            d = abs(old_rows[old_r] - new_rows[new_r])
+            if d < best_d:
+                best_d = d
+                best_r = new_r
+        if best_d < 8:
+            shift_votes_top.append(best_r - old_r)
+
+    if not shift_votes_bottom:
+        return (None, 0)
+
+    def median(lst):
+        s = sorted(lst)
+        n = len(s)
+        return s[n // 2] if n else 0
+
+    top_shift = median(shift_votes_top) if shift_votes_top else 0
+    bottom_shift = median(shift_votes_bottom)
+    net_shift_px = bottom_shift - top_shift
+
+    if abs(net_shift_px) < 3:
+        return (None, 0)  # No significant shift
+
+    # Find the transition boundary: scan down from top until the shift changes
+    boundary_old_r = oh // 2  # default: middle of page
+    prev_shift = top_shift
+    for old_r in range(0, oh, max(1, oh // 50)):
+        search_lo = max(0, old_r + prev_shift - 5)
+        search_hi = min(nh - 1, old_r + bottom_shift + 5)
+        best_r = old_r
+        best_d = float('inf')
+        for new_r in range(search_lo, search_hi + 1):
+            d = abs(old_rows[old_r] - new_rows[new_r])
+            if d < best_d:
+                best_d = d
+                best_r = new_r
+        if best_d < 8:
+            cur_shift = best_r - old_r
+            if abs(cur_shift - top_shift) >= abs(net_shift_px) * 0.5:
+                boundary_old_r = old_r
+                break
+
+    boundary_y = boundary_old_r / scale
+    shift_y = net_shift_px / scale
+    return (boundary_y, shift_y)
+
+
+def detect_vertical_shifts(old_page: fitz.Page, new_page: fitz.Page,
+                           scale: float = 0.15) -> list:
+    """
+    Compare old and new page row-by-row to detect where content was inserted
+    or removed, and by how much.
+
+    Returns a list of (y_threshold, y_shift) tuples, sorted by y_threshold.
+    For a given annotation at old_y:
+      - Find the last entry where y_threshold <= old_y
+      - Apply that entry's y_shift to get new_y
+    y_shift is negative when content above was removed (annotations shift up).
+
+    Uses low-resolution rendering for speed.
+    """
+    mat = fitz.Matrix(scale, scale)
+    try:
+        old_pix = old_page.get_pixmap(matrix=mat, alpha=False)
+        new_pix = new_page.get_pixmap(matrix=mat, alpha=False)
+    except Exception:
+        return [(0, 0)]
+
+    oh, ow = old_pix.height, old_pix.width
+    nh, nw = new_pix.height, new_pix.width
+
+    # Convert to flat byte arrays
+    old_bytes = old_pix.samples
+    new_bytes = new_pix.samples
+    n_channels = old_pix.n
+
+    def row_avg(data, row, w, ch):
+        start = row * w * ch
+        end = start + w * ch
+        return sum(data[start:end]) / (w * ch) if w * ch > 0 else 128.0
+
+    # For each row in new, find the best matching row in old
+    # Build a mapping: new_row -> best_old_row
+    # Then derive: for old_row R, what new_row does it map to?
+
+    SEARCH_RADIUS = int(oh * 0.6)  # search up to 60% of page height away
+
+    shifts = [(0, 0)]  # (y_threshold_pdf, shift_pdf) — start with no shift
+
+    # Scan old rows in steps, find where shift starts changing
+    prev_shift_px = 0
+    shift_start_old_row = None
+
+    for old_r in range(0, oh, max(1, oh // 80)):
+        old_val = row_avg(old_bytes, old_r, ow, n_channels)
+        best_new_r = old_r
+        best_diff = float('inf')
+
+        search_lo = max(0, old_r - SEARCH_RADIUS)
+        search_hi = min(nh - 1, old_r + SEARCH_RADIUS)
+        # Bias search toward current known shift
+        center = old_r + prev_shift_px
+        ordered = sorted(range(search_lo, search_hi + 1),
+                         key=lambda r: abs(r - center))
+
+        for new_r in ordered[:60]:  # check up to 60 candidates
+            new_val = row_avg(new_bytes, new_r, nw, n_channels)
+            diff = abs(old_val - new_val)
+            if diff < best_diff:
+                best_diff = diff
+                best_new_r = new_r
+            if diff < 1.0:
+                break
+
+        if best_diff > 20:
+            continue  # row too different to use as reference
+
+        cur_shift_px = best_new_r - old_r
+
+        if abs(cur_shift_px - prev_shift_px) >= 3:
+            # Shift changed — record the transition
+            y_threshold_pdf = old_r / scale
+            y_shift_pdf = cur_shift_px / scale
+            # Only add if meaningfully different from last recorded shift
+            if not shifts or abs(shifts[-1][1] - y_shift_pdf) >= 10:
+                shifts.append((y_threshold_pdf, y_shift_pdf))
+            prev_shift_px = cur_shift_px
+
+    return sorted(shifts, key=lambda x: x[0])
+
+
+def get_shift_for_y(shifts: list, old_y: float) -> float:
+    """
+    Given the shift table from detect_vertical_shifts and a y-coordinate in
+    the old PDF, return the y shift to apply.
+    """
+    result = 0.0
+    for y_thresh, y_shift in shifts:
+        if old_y >= y_thresh:
+            result = y_shift
+        else:
+            break
+    return result
+
+
+def find_visual_match(old_page: fitz.Page, new_doc: fitz.Document,
+                      annot_rect: fitz.Rect,
+                      start_page: int = 0,
+                      shift_table: list = None) -> tuple:
+    """
+    Try to locate the visual region around `annot_rect` on old_page
+    somewhere in new_doc using pixel correlation.
+
+    Returns (page_num, new_rect, confidence, note).
+    - new_rect is placed at the same relative position (normalized coords)
+      unless a better match is found by sliding search.
+    - confidence: 0.0–1.0
+    """
+    old_pw, old_ph = old_page.rect.width, old_page.rect.height
+    annot_w = annot_rect.x1 - annot_rect.x0
+    annot_h = annot_rect.y1 - annot_rect.y0
+    # Normalized annotation position in old page
+    norm_x = annot_rect.x0 / old_pw
+    norm_y = annot_rect.y0 / old_ph
+    norm_w = annot_w / old_pw
+    norm_h = annot_h / old_ph
+
+    # ── Build fingerprint from SLIDE BODY CONTENT near the annotation ─────────
+    # Annotations sit in margins; slide body content is in the center.
+    # Sample a wide center strip at the same vertical position.
+    CONTEXT_PAD = 30  # PDF points
+    # Use the inner 60% of the page width as the "slide body" reference strip
+    body_x0 = old_pw * 0.15
+    body_x1 = old_pw * 0.85
+    if annot_rect.x0 < old_pw * 0.3:
+        # Left-margin annotation: sample body to the right
+        content_x0 = max(annot_rect.x1 + 30, body_x0)
+        content_x1 = body_x1
+    elif annot_rect.x1 > old_pw * 0.7:
+        # Right-margin annotation: sample body to the left
+        content_x0 = body_x0
+        content_x1 = min(annot_rect.x0 - 30, body_x1)
+    else:
+        # Center annotation: use wider body strip
+        content_x0 = body_x0
+        content_x1 = body_x1
+
+    content_crop_rect = fitz.Rect(
+        content_x0,
+        annot_rect.y0 - CONTEXT_PAD,
+        content_x1,
+        annot_rect.y1 + CONTEXT_PAD,
+    )
+    # Render WITHOUT annotations so the patch matches the clean new PDF
+    old_crop = None
+    try:
+        clipped = content_crop_rect & old_page.rect
+        if not clipped.is_empty:
+            mat = fitz.Matrix(1.5, 1.5)
+            old_crop = old_page.get_pixmap(matrix=mat, clip=clipped, alpha=False, annots=False)
+    except Exception:
+        pass
+
+    if old_crop is None:
+        # Fall back to annotation area
+        crop_rect = fitz.Rect(
+            annot_rect.x0 - CONTEXT_PAD,
+            annot_rect.y0 - CONTEXT_PAD,
+            annot_rect.x1 + CONTEXT_PAD,
+            annot_rect.y1 + CONTEXT_PAD,
+        )
+        old_crop = render_crop(old_page, crop_rect, scale=1.5)
+    if old_crop is None:
+        return None, None, 0.0, "visual: crop failed"
+
+    old_hash = pixel_hash(old_crop)
+
+    best_page = None
+    best_rect = None
+    best_conf = 0.0
+    best_note = ""
+
+    # Search each candidate page
+    candidate_pages = list(range(start_page, len(new_doc)))
+    # Put same-index page first
+    if start_page < len(new_doc):
+        candidate_pages = [start_page] + [p for p in range(len(new_doc)) if p != start_page]
+
+    for new_page_num in candidate_pages:
+        new_page = new_doc[new_page_num]
+        npw, nph = new_page.rect.width, new_page.rect.height
+
+        # ── Primary strategy: vertical strip search using adjacent content ──────
+        # Slide the content crop vertically through the new page to find where
+        # the annotation's adjacent slide content best matches.
+        # This works for both image and non-image pages when a shift_table hint
+        # is available or not.
+        strip_h = max(annot_h + 2 * CONTEXT_PAD, 80)
+        strip_rect_old = fitz.Rect(content_x0, annot_rect.y0 - CONTEXT_PAD,
+                                   content_x1, annot_rect.y0 - CONTEXT_PAD + strip_h)
+        old_content_crop = None
+        try:
+            clipped = strip_rect_old & old_page.rect
+            if not clipped.is_empty:
+                old_content_crop = old_page.get_pixmap(
+                    matrix=fitz.Matrix(1.5, 1.5), clip=clipped, alpha=False, annots=False)
+        except Exception:
+            pass
+
+        if old_content_crop is not None:
+            old_content_hash = pixel_hash(old_content_crop, size=12)
+            # Search vertically: use shift_table hint to narrow range
+            if shift_table is not None:
+                hint_shift = get_shift_for_y(shift_table, annot_rect.y0)
+                search_lo = max(0, annot_rect.y0 + hint_shift - 400)
+                search_hi = min(nph - strip_h, annot_rect.y0 + hint_shift + 400)
+            else:
+                search_lo = 0
+                search_hi = nph - strip_h
+
+            VSTEP = max(strip_h * 0.15, 20)  # step 15% of strip height
+            v_best_conf = 0.0
+            v_best_y = annot_rect.y0  # fallback: same position
+            v_best_y += (hint_shift if shift_table else 0)
+
+            y = search_lo
+            while y <= search_hi:
+                strip_rect_new = fitz.Rect(content_x0, y, content_x1, y + strip_h)
+                new_content_crop = None
+                try:
+                    clipped2 = strip_rect_new & new_page.rect
+                    if not clipped2.is_empty:
+                        new_content_crop = new_page.get_pixmap(
+                            matrix=fitz.Matrix(1.5, 1.5), clip=clipped2, alpha=False, annots=False)
+                except Exception:
+                    pass
+                if new_content_crop is not None:
+                    new_content_hash = pixel_hash(new_content_crop, size=12)
+                    sim = hamming_similarity(old_content_hash, new_content_hash)
+                    if sim > v_best_conf:
+                        v_best_conf = sim
+                        v_best_y = y + CONTEXT_PAD  # remove pad offset → new annot y0
+                y += VSTEP
+
+            y_shift = v_best_y - annot_rect.y0
+            shifted_y0 = max(0, min(v_best_y, nph - annot_h))
+            shifted_y1 = shifted_y0 + annot_h
+            # Use strip similarity directly as confidence
+            conf = v_best_conf
+            shifted_rect = fitz.Rect(annot_rect.x0, shifted_y0, annot_rect.x1, shifted_y1)
+            if conf > best_conf:
+                best_conf = conf
+                best_page = new_page_num
+                best_rect = shifted_rect
+                best_note = (f"visual: strip-search y_shift={y_shift:+.0f} "
+                             f"page {new_page_num + 1} (conf={conf:.0%})")
+            if conf >= 0.70:
+                break
+            continue
+
+        # ── Fallback: sliding search (no shift table) ─────────────────────────
+        # First: try the same normalized position (fast path)
+        candidate_rect = fitz.Rect(
+            norm_x * npw - CONTEXT_PAD,
+            norm_y * nph - CONTEXT_PAD,
+            (norm_x + norm_w) * npw + CONTEXT_PAD,
+            (norm_y + norm_h) * nph + CONTEXT_PAD,
+        )
+        new_crop = render_crop(new_page, candidate_rect, scale=1.5)
+        same_pos_conf = 0.0
+        if new_crop is not None:
+            new_hash = pixel_hash(new_crop)
+            same_pos_conf = hamming_similarity(old_hash, new_hash)
+
+        if same_pos_conf >= 0.82:
+            # Strong match at same position — accept immediately
+            annot_new_rect = fitz.Rect(
+                norm_x * npw, norm_y * nph,
+                (norm_x + norm_w) * npw, (norm_y + norm_h) * nph,
+            )
+            if same_pos_conf > best_conf:
+                best_conf = same_pos_conf
+                best_page = new_page_num
+                best_rect = annot_new_rect
+                best_note = f"visual: same-position match page {new_page_num + 1} ({same_pos_conf:.0%})"
+            break  # don't bother sliding
+
+        # Sliding search — scan a grid of positions on the new page
+        # Use coarse step to keep it fast
+        STEP = max(annot_w * 0.5, 40)  # slide in 50%-width steps
+        SEARCH_W = npw
+        SEARCH_H = nph
+
+        slide_best_conf = same_pos_conf
+        slide_best_rect = fitz.Rect(
+            norm_x * npw, norm_y * nph,
+            (norm_x + norm_w) * npw, (norm_y + norm_h) * nph,
+        )
+
+        x = 0.0
+        while x + annot_w <= SEARCH_W:
+            y = 0.0
+            while y + annot_h <= SEARCH_H:
+                test_crop_rect = fitz.Rect(
+                    x - CONTEXT_PAD, y - CONTEXT_PAD,
+                    x + annot_w + CONTEXT_PAD, y + annot_h + CONTEXT_PAD
+                )
+                test_crop = render_crop(new_page, test_crop_rect, scale=1.0)
+                if test_crop is not None:
+                    test_hash = pixel_hash(test_crop)
+                    conf = hamming_similarity(old_hash, test_hash)
+                    if conf > slide_best_conf:
+                        slide_best_conf = conf
+                        slide_best_rect = fitz.Rect(x, y, x + annot_w, y + annot_h)
+                y += STEP
+            x += STEP
+
+        if slide_best_conf > best_conf:
+            best_conf = slide_best_conf
+            best_page = new_page_num
+            best_rect = slide_best_rect
+            if slide_best_conf >= 0.72:
+                best_note = f"visual: slide match page {new_page_num + 1} ({slide_best_conf:.0%})"
+            else:
+                best_note = f"visual: weak match page {new_page_num + 1} ({slide_best_conf:.0%})"
+
+        # Once we've checked the same-index page and it's decent, stop
+        if best_conf >= 0.65 and new_page_num == start_page:
+            break
+
+    if best_page is None or best_conf < 0.45:
+        # Fall back: keep original normalized position
+        new_page = new_doc[start_page] if start_page < len(new_doc) else new_doc[0]
+        npw, nph = new_page.rect.width, new_page.rect.height
+        fallback_rect = fitz.Rect(
+            norm_x * npw, norm_y * nph,
+            (norm_x + norm_w) * npw, (norm_y + norm_h) * nph,
+        )
+        return start_page, fallback_rect, best_conf, "visual: low confidence — kept original position"
+
+    return best_page, best_rect, best_conf, best_note
+
+
 def apply_offset(rect: fitz.Rect, offset: fitz.Point) -> fitz.Rect:
     return fitz.Rect(rect.x0 + offset.x, rect.y0 + offset.y,
                      rect.x1 + offset.x, rect.y1 + offset.y)
@@ -230,6 +793,8 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
         "total": 0,
         "matched": 0,
         "unmatched": 0,
+        "moved": 0,
+        "needs_look": 0,
         "content_removed": 0,
         "annotations": []
     }
@@ -272,7 +837,12 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             )
 
             # ── Fingerprint strategy ──────────────────────────────────────────
-            # For rectangles: use text INSIDE the rect as fingerprint
+            # Priority: text AT the arrow tip / inside the rect (what the annotation
+            # is POINTING TO) — this moves correctly even when sections are removed
+            # and content shifts. The annotation content string (REF label) is used
+            # only as supplementary context, not as the primary anchor.
+
+            # For rectangles: use text INSIDE the rect as the anchor
             if atype[0] == ANNOT_SQUARE:
                 rect_text = extract_text_in_rect(page, info.rect)
                 if rect_text and len(rect_text) > 4:
@@ -282,48 +852,173 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                     info.context_before = ctx_b
                     info.context_after = ctx_a
 
-            # For callouts: prefer annotation content text (REF strings etc.)
+            # For callouts: PRIMARY anchor = text at the arrow tip point.
+            # The annotation content text (e.g. REF strings) is stored separately
+            # and used only as context to boost match confidence.
             if not info.fingerprint_text:
-                content_text = info.content.strip()
-                if content_text and len(content_text) > 8:
-                    info.fingerprint_text = content_text
-                    info.fingerprint_rect = None
-                elif tip_point:
+                # 1. Try tip point first (where the arrow is pointing)
+                if tip_point:
                     fp_text, fp_rect = extract_text_near_point(page, tip_point)
-                    if not fp_text and vertices and len(vertices) >= 2:
-                        anchor = fitz.Point(vertices[-1][0], vertices[-1][1])
-                        fp_text, fp_rect = extract_text_near_point(page, anchor)
-                    info.fingerprint_text = fp_text
-                    info.fingerprint_rect = fp_rect
-                    if fp_rect:
-                        ctx_b, ctx_a = get_words_around_rect(page, fp_rect)
-                        info.context_before = ctx_b
-                        info.context_after = ctx_a
+                    if fp_text and len(fp_text) > 4:
+                        info.fingerprint_text = fp_text
+                        info.fingerprint_rect = fp_rect
+                        if fp_rect:
+                            ctx_b, ctx_a = get_words_around_rect(page, fp_rect)
+                            info.context_before = ctx_b
+                            info.context_after = ctx_a
+
+                # 2. Try the last vertex (anchor end of callout line) if tip gave nothing
+                if not info.fingerprint_text and vertices and len(vertices) >= 2:
+                    anchor = fitz.Point(vertices[-1][0], vertices[-1][1])
+                    fp_text, fp_rect = extract_text_near_point(page, anchor)
+                    if fp_text and len(fp_text) > 4:
+                        info.fingerprint_text = fp_text
+                        info.fingerprint_rect = fp_rect
+                        if fp_rect:
+                            ctx_b, ctx_a = get_words_around_rect(page, fp_rect)
+                            info.context_before = ctx_b
+                            info.context_after = ctx_a
+
+                # 3. Last resort: fall back to annotation content text (REF label etc.)
+                #    This is least reliable for repositioning but better than nothing.
+                if not info.fingerprint_text:
+                    content_text = info.content.strip()
+                    if content_text and len(content_text) > 8:
+                        info.fingerprint_text = content_text
+                        info.fingerprint_rect = None
+
+            # Store annotation content as extra context to disambiguate same-text matches
+            # (e.g. the same phrase appears twice but only one has this REF nearby)
+            if info.content.strip() and info.content.strip() != info.fingerprint_text:
+                content_words = info.content.strip().split()
+                extra_ctx = " ".join(content_words[:20])  # first 20 words of REF label
+                if info.context_after:
+                    info.context_after = info.context_after + " " + extra_ctx
+                else:
+                    info.context_after = extra_ctx
 
             all_annots.append(info)
 
     results["total"] = len(all_annots)
 
-    # ── 2. Match each annotation in the new doc ───────────────────────────────
+    # ── 2. Detect content type per page (text vs image) ─────────────────────
+    page_is_image = {}
+    for page_num in range(len(old_doc)):
+        page_is_image[page_num] = is_image_page(old_doc[page_num])
+
+    # ── 2b. Pre-compute content removal info for image pages ─────────────────
+    # For image-based pages, detect where content was removed and by how much,
+    # so we can apply the correct vertical shift to annotations below the removal.
+    page_removal_info = {}  # key: old_page_idx -> (boundary_y, shift_y)
+    for old_page_num in range(len(old_doc)):
+        if not page_is_image.get(old_page_num, False):
+            continue
+        old_page = old_doc[old_page_num]
+        new_page_num = old_page_num if old_page_num < len(new_doc) else len(new_doc) - 1
+        new_page = new_doc[new_page_num]
+        boundary_y, shift_y = detect_removal_boundary(old_page, new_page)
+        page_removal_info[old_page_num] = (boundary_y, shift_y)
+        if boundary_y is not None:
+            print(f"  Page {old_page_num+1}: removal boundary at y={boundary_y:.0f}, shift={shift_y:+.0f}")
+
+    # ── 3. Match each annotation in the new doc ───────────────────────────────
     for info in all_annots:
         key_words = extract_key_words(info.fingerprint_text) if info.fingerprint_text else []
+        page_image_mode = page_is_image.get(info.page_num, False)
 
-        # Check if the content still exists anywhere in the new doc
-        if info.fingerprint_text and key_words:
+        # Check if the content still exists anywhere in the new doc (text mode only)
+        if info.fingerprint_text and key_words and not page_image_mode:
             still_exists = text_exists_anywhere(new_doc, info.fingerprint_text, key_words)
         else:
-            still_exists = True  # can't tell, assume yes
+            still_exists = True  # can't determine for image pages
 
-        # Try same page first, then other pages
-        target_pages = []
-        if info.page_num < len(new_doc):
-            target_pages.append(info.page_num)
-        target_pages += [p for p in range(len(new_doc)) if p != info.page_num]
+        # ── Image-mode: use removal boundary + visual validation ─────────────
+        if page_image_mode or (not info.fingerprint_text and not key_words):
+            if page_image_mode:
+                old_page = old_doc[info.page_num]
+                new_pn = info.page_num if info.page_num < len(new_doc) else len(new_doc) - 1
+                removal_info = page_removal_info.get(info.page_num, (None, 0))
+                boundary_y, shift_y = removal_info
 
-        for new_page_num in target_pages:
-            new_page = new_doc[new_page_num]
+                # Determine y-shift for this annotation
+                annot_center_y = (info.rect.y0 + info.rect.y1) / 2
+                if boundary_y is not None and annot_center_y > boundary_y:
+                    # Annotation is below the removed region — shift it up
+                    y_offset = shift_y
+                    confidence = 0.80
+                    note = (f"visual: removed-block boundary y={boundary_y:.0f}, "
+                            f"shift={shift_y:+.0f}")
+                elif boundary_y is not None:
+                    # Annotation is above the removed region — no shift
+                    y_offset = 0
+                    confidence = 0.85
+                    note = f"visual: above removal boundary (y={boundary_y:.0f})"
+                else:
+                    # No removal detected — try visual patch matching
+                    new_pn2, new_rect2, confidence, note = find_visual_match(
+                        old_page, new_doc, info.rect, start_page=info.page_num,
+                        shift_table=None)
+                    if new_rect2 is not None:
+                        info.new_rect = new_rect2
+                        info.new_vertices = [
+                            (v[0] + (new_rect2.x0 - info.rect.x0),
+                             v[1] + (new_rect2.y0 - info.rect.y0))
+                            for v in info.vertices
+                        ]
+                        info.matched = confidence >= 0.55
+                        info.match_confidence = confidence
+                        info.match_method = "visual"
+                        info.match_note = note
+                        info.status = "moved" if confidence >= 0.72 else "needs_look"
+                    y_offset = 0  # handled above
 
-            if info.fingerprint_text and key_words:
+                if boundary_y is not None:
+                    # Apply the computed y-offset
+                    new_doc_page = new_doc[new_pn]
+                    nph = new_doc_page.rect.height
+                    annot_h = info.rect.y1 - info.rect.y0
+                    new_y0 = max(0, min(info.rect.y0 + y_offset, nph - annot_h))
+                    new_y1 = new_y0 + annot_h
+                    new_rect = fitz.Rect(info.rect.x0, new_y0, info.rect.x1, new_y1)
+                    info.new_rect = new_rect
+                    info.new_vertices = [
+                        (v[0], v[1] + y_offset)
+                        for v in info.vertices
+                    ]
+                    info.matched = True
+                    info.match_confidence = confidence
+                    info.match_method = "visual"
+                    info.match_note = note
+                    # Annotations whose center was inside the removed zone
+                    # (between boundary and boundary - shift) need review
+                    removed_zone_top = boundary_y + shift_y  # top of removed block in old PDF
+                    removed_zone_bot = boundary_y
+                    if (removed_zone_top <= annot_center_y <= removed_zone_bot or
+                            removed_zone_bot <= annot_center_y <= removed_zone_top):
+                        info.status = "needs_look"
+                        info.match_note += " — annotation may have pointed at removed content"
+                    else:
+                        info.status = "moved"
+            else:
+                # No fingerprint and not image — keep original position
+                if info.page_num < len(new_doc):
+                    info.matched = True
+                    info.match_confidence = 0.5
+                    info.match_method = "position"
+                    info.new_rect = fitz.Rect(info.rect)
+                    info.new_vertices = list(info.vertices)
+                    info.status = "needs_look"
+                    info.match_note = "No text anchor — kept original position"
+
+        else:
+            # ── Text-mode: try same page first, then other pages ─────────────
+            target_pages = []
+            if info.page_num < len(new_doc):
+                target_pages.append(info.page_num)
+            target_pages += [p for p in range(len(new_doc)) if p != info.page_num]
+
+            for new_page_num in target_pages:
+                new_page = new_doc[new_page_num]
                 match_rect, confidence = find_text_in_page(
                     new_page, info.fingerprint_text, key_words,
                     info.context_before, info.context_after)
@@ -355,30 +1050,21 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                                          for v in info.vertices]
                     info.matched = True
                     info.match_confidence = confidence
-                    info.status = "moved" if (abs(offset.x) > 2 or abs(offset.y) > 2) else "moved"
+                    info.match_method = "text"
+                    info.status = "moved"
                     info.match_note = (f"Moved to page {new_page_num + 1} "
                                        f"(confidence {confidence:.0%})")
                     break
-            else:
-                # No fingerprint — keep original position
-                if new_page_num == info.page_num:
-                    info.matched = True
-                    info.match_confidence = 0.5
-                    info.new_rect = fitz.Rect(info.rect)
-                    info.new_vertices = list(info.vertices)
-                    info.status = "needs_look"
-                    info.match_note = "No text anchor — kept original position"
-                    break
 
         # ── Classify unmatched ────────────────────────────────────────────────
-        if not info.matched:
-            if not still_exists:
+        if not info.matched and info.new_rect is None:
+            if not still_exists and not page_image_mode:
                 info.status = "content_removed"
                 info.match_note = "Annotated content no longer exists in new PDF"
                 results["content_removed"] += 1
             else:
                 info.status = "needs_look"
-                info.match_note = "Content may exist but position could not be determined"
+                info.match_note = "Position could not be determined — kept original"
             # Keep at original position so nothing is silently lost
             if info.page_num < len(new_doc):
                 info.new_rect = fitz.Rect(info.rect)
@@ -387,6 +1073,14 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
         # Low-confidence matches also need a look
         if info.matched and info.match_confidence < 0.4:
             info.status = "needs_look"
+
+        # Tally status counters
+        if info.status == "moved":
+            results["moved"] += 1
+        elif info.status == "needs_look":
+            results["needs_look"] += 1
+        elif info.status == "content_removed":
+            pass  # already incremented above when classified
 
         results["matched" if info.matched else "unmatched"] += 1
         results["annotations"].append({
@@ -397,13 +1091,116 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             "author": info.author,
             "status": info.status,
             "confidence": f"{info.match_confidence:.0%}",
+            "method": info.match_method,
             "note": info.match_note,
         })
 
-    # ── 3. Write output PDF ───────────────────────────────────────────────────
+    # ── 4. Build page preview data (dimensions + annotation overlays) ─────────
+    # Group annotations by page for the preview renderer
+    annots_by_page = {}
+    for info in all_annots:
+        pg = info.page_num
+        if pg not in annots_by_page:
+            annots_by_page[pg] = []
+        annots_by_page[pg].append(info)
+
+    pages_preview = []
+    preview_doc = fitz.open(new_pdf_path)
+    old_preview_doc = fitz.open(old_pdf_path)
+    for page_num in sorted(annots_by_page.keys()):
+        if page_num >= len(preview_doc):
+            continue
+        page = preview_doc[page_num]
+        pw, ph = page.rect.width, page.rect.height
+
+        # Old page dimensions (may differ from new page)
+        old_pw, old_ph = pw, ph
+        if page_num < len(old_preview_doc):
+            old_page = old_preview_doc[page_num]
+            old_pw, old_ph = old_page.rect.width, old_page.rect.height
+
+        overlay_annots = []
+        for info in annots_by_page[page_num]:
+            new_r = info.new_rect if info.new_rect else info.rect
+            old_r = info.rect  # original position in old PDF
+
+            # Normalised coords for new (right) side
+            new_coords = {
+                "x": new_r.x0 / pw,
+                "y": new_r.y0 / ph,
+                "w": (new_r.x1 - new_r.x0) / pw,
+                "h": (new_r.y1 - new_r.y0) / ph,
+            }
+            # Normalised coords for old (left) side
+            old_coords = {
+                "x": old_r.x0 / old_pw,
+                "y": old_r.y0 / old_ph,
+                "w": (old_r.x1 - old_r.x0) / old_pw,
+                "h": (old_r.y1 - old_r.y0) / old_ph,
+            }
+
+            overlay_annots.append({
+                "index": info.index,
+                "status": info.status,
+                "content": info.content[:120] + ("…" if len(info.content) > 120 else ""),
+                "author": info.author,
+                "confidence": f"{info.match_confidence:.0%}",
+                "method": info.match_method,
+                "note": info.match_note,
+                # New position (right/output side)
+                "x": new_coords["x"],
+                "y": new_coords["y"],
+                "w": new_coords["w"],
+                "h": new_coords["h"],
+                # Original position (left/old side)
+                "old_x": old_coords["x"],
+                "old_y": old_coords["y"],
+                "old_w": old_coords["w"],
+                "old_h": old_coords["h"],
+            })
+        pages_preview.append({
+            "page_num": page_num + 1,
+            "width": pw,
+            "height": ph,
+            "aspect": ph / pw,
+            "old_width": old_pw,
+            "old_height": old_ph,
+            "old_aspect": old_ph / old_pw,
+            "annotations": overlay_annots,
+        })
+    preview_doc.close()
+    old_preview_doc.close()
+    results["pages"] = pages_preview
+
+    # ── 5. Write output PDF ───────────────────────────────────────────────────
+    write_pdf(all_annots, new_pdf_path, output_path, skip_indices=set())
+    old_doc.close()
+    new_doc.close()
+
+    # Store all_annots on results for use by confirm/re-write endpoint
+    results["_all_annots"] = all_annots
+    results["_new_pdf_path"] = new_pdf_path
+
+    return results
+
+
+def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
+    """Write annotations to a new PDF, optionally skipping some by their index field.
+
+    Args:
+        all_annots: list of AnnotationInfo objects (from process_pdfs results["_all_annots"])
+        new_pdf_path: path to the new (target) PDF
+        output_path: where to save the output PDF
+        skip_indices: set of annotation index values to omit (matches AnnotationInfo.index)
+    """
+    if skip_indices is None:
+        skip_indices = set()
+
     out_doc = fitz.open(new_pdf_path)
 
     for info in all_annots:
+        if info.index in skip_indices:
+            continue
         if info.new_rect is None:
             continue
         target_page_num = info.page_num
@@ -446,8 +1243,4 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             annot.update()
 
     out_doc.save(output_path, garbage=4, deflate=True)
-    old_doc.close()
-    new_doc.close()
     out_doc.close()
-
-    return results
