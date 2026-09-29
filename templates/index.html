@@ -1,4 +1,4 @@
-<!-- v5.0 -->
+<!-- v5.1 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -508,34 +508,18 @@
       // For very tall pages (aspect > 2) let the image set its own height via width:100%/height:auto.
       // For normal pages use the padding-bottom aspect-ratio trick so the frame has height
       // before the image loads (ensures IntersectionObserver fires).
-      frame.style.position = 'relative';
-      if (aspect <= 2) {
-        frame.style.paddingBottom = (aspect * 100).toFixed(2) + '%';
-        frame.style.height = '0';
-      }
+     frame.style.position = 'relative';
+frame.style.paddingBottom = (aspect * 100).toFixed(2) + '%';
+frame.style.height = '0';
 
-      const img = document.createElement('img');
-      img.alt = '';
-      if (aspect <= 2) {
-        // Fit inside the aspect-ratio box
-        img.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;';
-      } else {
-        // Tall scrolling page — let it size naturally; overlay SVG stretches with it
-        img.style.cssText = 'display:block;width:100%;height:auto;';
-      }
-      // Retry up to 3 times on error (race between job completion and first render)
-      let retries = 0;
-      img.onerror = () => {
-        if (retries++ < 3) setTimeout(() => { img.src = imgSrc + '?r=' + retries; }, 800 * retries);
-      };
-      img.dataset.src = imgSrc;
-      // For tall pages, once the image loads its natural height, set the frame
-      // height explicitly so the absolute-positioned SVG overlay knows its bounds.
-      if (aspect > 2) {
-        img.addEventListener('load', () => {
-          frame.style.height = img.naturalHeight + 'px';
-        }, { once: true });
-      }
+const img = document.createElement('img');
+img.alt = '';
+img.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;';
+let retries = 0;
+img.onerror = () => {
+  if (retries++ < 3) setTimeout(() => { img.src = imgSrc + '?r=' + retries; }, 800 * retries);
+};
+img.dataset.src = imgSrc;
       frame.appendChild(img);
 
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
