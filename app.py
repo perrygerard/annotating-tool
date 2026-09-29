@@ -5,7 +5,7 @@ import time
 import fitz  # PyMuPDF
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
-from remapper import process_pdfs
+from remapper import process_pdfs, write_pdf
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
@@ -66,19 +66,20 @@ def remap():
     def run_job():
         try:
             results = process_pdfs(annotated_path, new_path, output_path)
-            # Keep annotated_path for side-by-side preview; new_path not needed
-            try:
-                os.remove(new_path)
-            except Exception:
-                pass
+            # Keep new_path for re-writes via /confirm; keep annotated_path for previews
+            all_annots = results.pop("_all_annots", [])
+            new_pdf_path_stored = results.pop("_new_pdf_path", new_path)
             jobs[job_id] = {
                 "status": "done",
                 "results": results,
-                "output_path": output_path,
+                "output_path": output_path if os.path.exists(output_path) else None,
                 "annotated_path": annotated_path,
+                "new_pdf_path": new_pdf_path_stored,
+                "_all_annots": all_annots,  # kept server-side only, not sent to client
             }
         except Exception as e:
-            jobs[job_id] = {"status": "error", "message": str(e)}
+            import traceback
+            jobs[job_id] = {"status": "error", "message": str(e), "trace": traceback.format_exc()}
             for p in [annotated_path, new_path]:
                 try:
                     os.remove(p)
@@ -94,7 +95,9 @@ def status(job_id):
     job = jobs.get(job_id)
     if not job:
         return jsonify({"status": "not_found"}), 404
-    return jsonify(job)
+    # Strip server-only fields that aren't JSON-serialisable
+    safe = {k: v for k, v in job.items() if not k.startswith("_")}
+    return jsonify(safe)
 
 
 @app.route("/download/<job_id>")
@@ -108,6 +111,44 @@ def download(job_id):
     return send_file(output_path, as_attachment=True,
                      download_name="remapped_annotations.pdf",
                      mimetype="application/pdf")
+
+
+@app.route("/confirm/<job_id>", methods=["POST"])
+def confirm(job_id):
+    """Re-write the output PDF with user-deleted annotations removed.
+
+    Body JSON: { "deleted_indices": [0, 3, 7, ...] }
+    The indices match the `index` field on each annotation object.
+    """
+    job = jobs.get(job_id)
+    if not job or job["status"] != "done":
+        return jsonify({"error": "Job not ready"}), 404
+
+    data = request.get_json(silent=True) or {}
+    deleted = set(data.get("deleted_indices", []))
+
+    all_annots = job.get("_all_annots")
+    new_pdf_path = job.get("new_pdf_path") or job.get("annotated_path")
+    output_path = job.get("output_path")
+
+    if not all_annots or not new_pdf_path or not output_path:
+        return jsonify({"error": "Job data missing — please re-process"}), 500
+
+    if not os.path.exists(new_pdf_path):
+        return jsonify({"error": "Source PDF no longer available — please re-process"}), 500
+
+    try:
+        write_pdf(all_annots, new_pdf_path, output_path, skip_indices=deleted)
+        # Update the results annotation list to reflect deletions
+        results = job["results"]
+        results["annotations"] = [
+            a for a in results.get("annotations", [])
+            if a.get("index") not in deleted
+        ]
+        results["total"] = len(results["annotations"])
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 def _render_page_png(pdf_path, page_num, target_width_px=300):
@@ -128,11 +169,15 @@ def _render_page_png(pdf_path, page_num, target_width_px=300):
 
 @app.route("/preview/<job_id>/<int:page_num>")
 def preview(job_id, page_num):
-    """Render a page of the output PDF as a PNG."""
+    """Render a page of the output PDF as a PNG.
+    Falls back to the new PDF if the output hasn't been written yet."""
     job = jobs.get(job_id)
     if not job or job["status"] != "done":
         abort(404)
     output_path = job.get("output_path")
+    # Fall back to the new PDF if output not written
+    if not output_path or not os.path.exists(output_path):
+        output_path = job.get("new_pdf_path")
     if not output_path or not os.path.exists(output_path):
         abort(404)
     try:

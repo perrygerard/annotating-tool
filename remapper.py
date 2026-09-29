@@ -1173,9 +1173,34 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     results["pages"] = pages_preview
 
     # ── 5. Write output PDF ───────────────────────────────────────────────────
+    write_pdf(all_annots, new_pdf_path, output_path, skip_indices=set())
+    old_doc.close()
+    new_doc.close()
+
+    # Store all_annots on results for use by confirm/re-write endpoint
+    results["_all_annots"] = all_annots
+    results["_new_pdf_path"] = new_pdf_path
+
+    return results
+
+
+def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
+    """Write annotations to a new PDF, optionally skipping some by their index field.
+
+    Args:
+        all_annots: list of AnnotationInfo objects (from process_pdfs results["_all_annots"])
+        new_pdf_path: path to the new (target) PDF
+        output_path: where to save the output PDF
+        skip_indices: set of annotation index values to omit (matches AnnotationInfo.index)
+    """
+    if skip_indices is None:
+        skip_indices = set()
+
     out_doc = fitz.open(new_pdf_path)
 
     for info in all_annots:
+        if info.index in skip_indices:
+            continue
         if info.new_rect is None:
             continue
         target_page_num = info.page_num
@@ -1218,9 +1243,4 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             annot.update()
 
     out_doc.save(output_path, garbage=4, deflate=True)
-    old_doc.close()   # the main matching-loop doc opened at the top
-    new_doc.close()
     out_doc.close()
-
-
-    return results
