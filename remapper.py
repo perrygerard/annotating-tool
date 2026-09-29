@@ -802,6 +802,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
     # ── 1. Extract all annotations from old doc ──────────────────────────────
     all_annots = []
+    next_index = 0
     for page_num in range(len(old_doc)):
         page = old_doc[page_num]
         for i, annot in enumerate(page.annots()):
@@ -848,7 +849,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 pass
 
             info = AnnotationInfo(
-                index=i,
+                index=next_index,
                 page_num=page_num,
                 annot_type=atype,
                 rect=fitz.Rect(annot.rect),
@@ -929,6 +930,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 else:
                     info.context_after = extra_ctx
 
+            next_index += 1
             all_annots.append(info)
 
     results["total"] = len(all_annots)
@@ -1127,6 +1129,10 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             "note": info.match_note,
         })
 
+    num_by_index = assign_numbers(all_annots)
+    for info, entry in zip(all_annots, results["annotations"]):
+        entry["number"] = num_by_index.get(info.index)
+
     # ── 4. Build page preview data (dimensions + annotation overlays) ─────────
     # Group annotations by page for the preview renderer
     annots_by_page = {}
@@ -1144,6 +1150,9 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             continue
         page = preview_doc[page_num]
         pw, ph = page.rect.width, page.rect.height
+        S_pg = _scale(pw)
+        tot_w = pw + SIDEBAR_BASE * S_pg      # output page = original + sidebar
+        dot_r_pg = DOT_BASE * S_pg
 
         # Old page dimensions (may differ from new page)
         old_pw, old_ph = pw, ph
@@ -1158,11 +1167,15 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
             # Normalised coords for new (right) side
             new_coords = {
-                "x": new_r.x0 / pw,
+                "x": new_r.x0 / tot_w,
                 "y": new_r.y0 / ph,
-                "w": (new_r.x1 - new_r.x0) / pw,
+                "w": (new_r.x1 - new_r.x0) / tot_w,
                 "h": (new_r.y1 - new_r.y0) / ph,
             }
+            dot_xy = None
+            if num_by_index.get(info.index) is not None:
+                ddx, ddy = _dot_position(info, pw, ph, dot_r_pg, S_pg)
+                dot_xy = (ddx / tot_w, ddy / ph)
             # Normalised coords for old (left) side
             old_coords = {
                 "x": old_r.x0 / old_pw,
@@ -1173,8 +1186,11 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
             overlay_annots.append({
                 "index": info.index,
+                "number": num_by_index.get(info.index),
+                "page": info.page_num + 1,
+                "type": info.annot_type[1],
                 "status": info.status,
-                "content": info.content[:120] + ("…" if len(info.content) > 120 else ""),
+                "content": info.content,
                 "author": info.author,
                 "confidence": f"{info.match_confidence:.0%}",
                 "method": info.match_method,
@@ -1189,12 +1205,14 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 "old_y": old_coords["y"],
                 "old_w": old_coords["w"],
                 "old_h": old_coords["h"],
+                "dot_x": dot_xy[0] if dot_xy else None,
+                "dot_y": dot_xy[1] if dot_xy else None,
             })
         pages_preview.append({
             "page_num": page_num + 1,
-            "width": pw,
+            "width": tot_w,
             "height": ph,
-            "aspect": ph / pw,
+            "aspect": ph / tot_w,
             "old_width": old_pw,
             "old_height": old_ph,
             "old_aspect": old_ph / old_pw,
@@ -1230,6 +1248,45 @@ def _wrap_text(text, max_chars):
     if current:
         lines.append(current)
     return lines
+
+
+SIDEBAR_BASE = 200   # sidebar width at scale 1
+DOT_BASE = 11        # dot radius at scale 1
+
+
+def _scale(pw):
+    """Sizes scale with page width (900pt baseline) so they stay legible on big pages."""
+    return max(1.0, pw / 900.0)
+
+
+def _dot_position(info, pw, ph, dot_r, S):
+    """Final dot centre on the page: up-and-right of the tip, clamped inside the page."""
+    dx, dy = _anchor_point(info)
+    dx += dot_r * 0.9 + 2 * S
+    dy -= dot_r * 0.9 + 2 * S
+    dx = max(dot_r + 1, min(dx, pw - dot_r - 1))
+    dy = max(dot_r + 1, min(dy, ph - dot_r - 1))
+    return dx, dy
+
+
+def _anchor_point(info):
+    """Where the dot goes: remapped tip point, else raw tip, else rect centre."""
+    if info.new_vertices:
+        return info.new_vertices[0]
+    if info.tip_point is not None:
+        return (info.tip_point.x, info.tip_point.y)
+    r = info.new_rect or info.rect
+    return (r.x0 + r.width / 2, r.y0 + r.height / 2)
+
+
+def assign_numbers(all_annots):
+    """Give every text (FreeText) annotation a stable global number in reading
+    order (page, then top-to-bottom, left-to-right by dot position).
+    Rectangles get no number. Returns {annot.index: number}."""
+    numbered = [a for a in all_annots
+                if a.annot_type[0] == ANNOT_FREETEXT and a.new_rect is not None]
+    numbered.sort(key=lambda a: (a.page_num, round(_anchor_point(a)[1] / 20), _anchor_point(a)[0]))
+    return {a.index: n + 1 for n, a in enumerate(numbered)}
 
 
 def _wrap_text_measured(text, max_w, fontsize):
@@ -1278,12 +1335,13 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
               if info.index not in skip_indices and info.new_rect is not None]
 
     # Only text (FreeText) annotations get a number/dot/sidebar entry.
-    # Rectangles have no text and are drawn as plain boxes below.
-    numbered = [info for info in active if info.annot_type[0] == ANNOT_FREETEXT]
-
-    # Global sequential numbers (1-based) across all pages, in page order
-    numbered.sort(key=lambda a: (a.page_num, a.new_rect.y0, a.new_rect.x0))
-    global_num = {(info.page_num, info.index): i + 1 for i, info in enumerate(numbered)}
+    # Numbers are assigned over ALL annotations so they stay stable when the
+    # user removes some (gaps are fine; references never shift).
+    num_by_index = assign_numbers(all_annots)
+    numbered = [info for info in active
+                if info.annot_type[0] == ANNOT_FREETEXT and info.index in num_by_index]
+    numbered.sort(key=lambda a: num_by_index[a.index])
+    global_num = {(info.page_num, info.index): num_by_index[info.index] for info in numbered}
 
     # Group by page
     from collections import defaultdict
@@ -1300,10 +1358,10 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
 
         # Scale every size to the page width so it stays legible on large
         # pages (web-page PDFs are often ~1800pt wide vs 612pt for letter).
-        S = max(1.0, pw / 900.0)
-        SIDEBAR_W = 200 * S
+        S = _scale(pw)
+        SIDEBAR_W = SIDEBAR_BASE * S
         SIDEBAR_PAD = 10 * S
-        DOT_R = 9 * S
+        DOT_R = DOT_BASE * S
         HEADER_H = 26 * S
         annots_on_page = page_annots.get(page_num, [])
 
@@ -1371,21 +1429,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
         for info in annots_on_page:
             num = global_num[(info.page_num, info.index)]
 
-            # new_vertices[0] is the remapped tip point (the superscript location)
-            if info.new_vertices and len(info.new_vertices) >= 1:
-                dx, dy = info.new_vertices[0]
-            elif info.tip_point is not None:
-                dx, dy = info.tip_point.x, info.tip_point.y
-            else:
-                r = info.new_rect
-                dx, dy = r.x0 + r.width / 2, r.y0 + r.height / 2
-
-            # Sit up-and-right of the superscript, scaled with the page
-            dx += DOT_R * 0.9 + 2 * S
-            dy -= DOT_R * 0.9 + 2 * S
-
-            dx = max(DOT_R + 1, min(dx, pw - DOT_R - 1))
-            dy = max(DOT_R + 1, min(dy, ph - DOT_R - 1))
+            dx, dy = _dot_position(info, pw, ph, DOT_R, S)
 
             _draw_number_dot(page, dx, dy, num, radius=DOT_R)
 

@@ -152,6 +152,14 @@
     .ann-rect.content_removed:hover { fill: rgba(124,58,237,0.12); }
     .ann-rect.active { fill: rgba(74,111,165,0.18); stroke: var(--accent); stroke-width: 2.5px; }
 
+    /* New-side numbered markers (replace outlines) */
+    .ann-mark { pointer-events: all; cursor: pointer; }
+    .ann-mark circle { fill: #111; stroke: #fff; stroke-width: 1.5px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
+    .ann-mark text { fill: #fff; font-weight: 700; font-family: system-ui, -apple-system, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .ann-mark:hover circle { fill: #333; }
+    .ann-mark.active circle { fill: var(--accent); stroke: #fff; }
+    .ann-mark-hidden { visibility: hidden; pointer-events: none; }
+
     /* Old-side overlays: muted ghost style */
     .ann-rect-old { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 1.5px; stroke-dasharray: 4 3; transition: fill 0.15s; }
     .ann-rect-old.moved         { stroke: var(--success); opacity: 0.45; }
@@ -161,7 +169,7 @@
 
     /* Right panel — detail sidebar: fixed narrow width */
     .detail-panel {
-      flex: 0 0 220px; width: 220px; min-width: 0; overflow-y: auto;
+      flex: 0 0 280px; width: 280px; min-width: 0; overflow-y: auto;
       padding: 16px 12px 60px;
       background: var(--surface);
       border-left: 1px solid var(--border);
@@ -217,34 +225,49 @@
     .reset-btn { display: block; width: 100%; padding: 9px; background: transparent; color: var(--ink-light); border: 1px solid var(--border); border-radius: 8px; font-size: 0.82rem; cursor: pointer; margin-top: 12px; }
     .reset-btn:hover { background: var(--bg); }
 
-    /* Annotation index list */
+    /* Annotation accordion list */
     .ann-item {
-      display: flex; align-items: flex-start; gap: 8px;
-      padding: 8px 10px; border-radius: 7px; cursor: pointer;
-      font-size: 0.75rem; color: var(--ink-mid); line-height: 1.35;
-      border: 1px solid transparent; margin-bottom: 4px;
-      transition: background 0.12s;
+      border: 1px solid var(--border); border-radius: 9px; margin-bottom: 6px;
+      background: var(--surface); overflow: hidden;
+      transition: border-color 0.12s, box-shadow 0.12s;
     }
-    .ann-item:hover { background: var(--bg); }
-    .ann-item.active { background: var(--accent-light); border-color: var(--accent); color: var(--ink); }
-    .ann-item.deleted { opacity: 0.38; }
-    .ann-item.deleted .ann-item-text { text-decoration: line-through; }
-    .ann-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
-    .ann-item-dot.moved { background: var(--success); }
-    .ann-item-dot.needs_look { background: var(--warn); }
-    .ann-item-dot.content_removed { background: var(--removed); }
-    .ann-item-dot.deleted { background: var(--ink-light); }
-    .ann-item-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ann-delete-btn {
-      flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
-      border: none; background: transparent; color: var(--ink-light);
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      font-size: 0.8rem; line-height: 1; padding: 0; margin-top: 1px;
-      transition: background 0.12s, color 0.12s;
+    .ann-item:hover { border-color: #c9c9d6; }
+    .ann-item.open { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .ann-head {
+      display: flex; align-items: center; gap: 9px; width: 100%;
+      padding: 9px 10px; background: transparent; border: none; cursor: pointer;
+      font: inherit; text-align: left; color: var(--ink);
     }
-    .ann-delete-btn:hover { background: var(--error-bg); color: var(--error); }
-    .ann-item.deleted .ann-delete-btn { color: var(--success); }
-    .ann-item.deleted .ann-delete-btn:hover { background: var(--success-bg); color: var(--success); }
+    .ann-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+    .num-dot {
+      flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
+      background: #111; color: #fff; font-size: 0.68rem; font-weight: 700;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .ann-status { margin-right: auto; }
+    .ann-chevron { flex: 0 0 auto; color: var(--ink-light); font-size: 0.8rem; transition: transform 0.15s; }
+    .ann-item.open .ann-chevron { transform: rotate(180deg); }
+    .ann-body { padding: 2px 11px 11px; font-size: 0.74rem; color: var(--ink-mid); line-height: 1.45; }
+    .ann-body[hidden] { display: none; }
+    .ann-body .dc-content { font-size: 0.71rem; color: var(--ink); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 8px; margin-bottom: 8px; font-family: ui-monospace, monospace; word-break: break-word; max-height: 140px; overflow-y: auto; }
+    .ann-body .dc-row { display: flex; justify-content: space-between; gap: 8px; font-size: 0.69rem; margin-bottom: 3px; }
+    .ann-body .dc-row span:first-child { color: var(--ink-light); }
+    .ann-body .dc-row span:last-child { color: var(--ink); font-weight: 500; text-align: right; }
+    .ann-body .dc-note { font-size: 0.67rem; color: var(--ink-light); margin: 7px 0 10px; line-height: 1.4; }
+    .ann-actions { display: flex; flex-direction: column; gap: 6px; }
+    .act-btn { width: 100%; padding: 8px 10px; border: none; border-radius: 7px; font-size: 0.78rem; font-weight: 600; color: #fff; cursor: pointer; }
+    .act-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .act-good   { background: var(--success); }
+    .act-good:hover { background: #235e3c; }
+    .act-remove { background: #b4381f; }
+    .act-remove:hover { background: #962e19; }
+    .act-btn.secondary { background: transparent; color: var(--ink-mid); border: 1px solid var(--border); }
+    .act-btn.secondary:hover { background: var(--bg); }
+    .ann-item.deleted .num-dot { background: var(--ink-light); }
+    .ann-item.deleted .dc-content { text-decoration: line-through; opacity: 0.6; }
+    .badge.reviewed { background: var(--success-bg); color: var(--success); }
+    .badge.deleted  { background: #ececf1; color: var(--ink-light); }
 
     /* Responsive: stack on narrow */
     @media (max-width: 480px) {
@@ -370,13 +393,8 @@
         <div class="legend-item"><span class="legend-swatch removed"></span> Content removed from document</div>
       </div>
 
-      <!-- Annotation detail -->
-      <div class="detail-header">Selected annotation</div>
-      <div class="detail-card" id="detail-card"></div>
-      <div class="detail-empty" id="detail-empty">Click any annotation outline on a page to see its details here.</div>
-
       <!-- Annotation index list -->
-      <div class="detail-header" id="ann-list-header" style="display:none;margin-top:16px;">All annotations</div>
+      <div class="detail-header" id="ann-list-header" style="display:none;margin-top:16px;">References</div>
       <div id="ann-list"></div>
 
       <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
@@ -390,6 +408,7 @@
   let progressVal = 30;
   let activeRect = null;
   let deletedIndices = new Set(); // annotation .index values the user has removed
+  let reviewedIndices = new Set(); // annotation .index values marked "Looks Good"
 
   const inputAnnotated = document.getElementById('input-annotated');
   const inputNew = document.getElementById('input-new');
@@ -475,6 +494,7 @@
   function showResults(results) {
     document.getElementById('progress-screen').style.display = 'none';
     deletedIndices = new Set();
+    reviewedIndices = new Set();
     updateConfirmButton();
     const rs = document.getElementById('results-screen');
     rs.style.top = document.querySelector('header').getBoundingClientRect().height + 'px';
@@ -552,7 +572,34 @@
       svg.setAttribute('preserveAspectRatio', 'none');
 
       const rects = [];
+      const asDots = rectClass === 'ann-rect';   // new (right) side: numbered markers, no boxes
       annots.forEach(ann => {
+        if (asDots) {
+          if (ann.number == null || ann.dot_x == null) {
+            // Rectangles have no marker; keep an invisible placeholder so indexes stay aligned
+            const ph = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            ph.setAttribute('class', 'ann-mark-hidden');
+            ph.setAttribute('x', 0); ph.setAttribute('y', 0); ph.setAttribute('width', 1); ph.setAttribute('height', 1);
+            svg.appendChild(ph); rects.push(ph);
+            return;
+          }
+          const r = vbW * 0.0135;                 // ~14px radius at typical panel width
+          const cx = ann.dot_x * vbW, cy = ann.dot_y * vbH;
+          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          g.setAttribute('class', 'ann-mark');
+          g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
+          const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('x', cx); t.setAttribute('y', cy);
+          t.setAttribute('font-size', r * (String(ann.number).length > 1 ? 1.05 : 1.3));
+          t.textContent = ann.number;
+          const tt = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+          tt.textContent = `Reference ${ann.number}`;
+          g.appendChild(tt); g.appendChild(c); g.appendChild(t);
+          svg.appendChild(g); rects.push(g);
+          return;
+        }
         const x = ann[coordKey + 'x'] !== undefined ? ann[coordKey + 'x'] : ann.x;
         const y = ann[coordKey + 'y'] !== undefined ? ann[coordKey + 'y'] : ann.y;
         const w = ann[coordKey + 'w'] !== undefined ? ann[coordKey + 'w'] : ann.w;
@@ -634,40 +681,17 @@
 
     window._annRegistry = annRegistry;
 
-    // Build annotation index list in sidebar
+    // Build reference list in sidebar (text annotations only — these carry the numbers)
     const listEl = document.getElementById('ann-list');
     const listHeader = document.getElementById('ann-list-header');
     listEl.innerHTML = '';
-    if (annRegistry.length) {
+    const numbered = annRegistry
+      .map((entry, idx) => ({ entry, idx }))
+      .filter(x => x.entry.ann.number != null)
+      .sort((a, b) => a.entry.ann.number - b.entry.ann.number);
+    if (numbered.length) {
       listHeader.style.display = '';
-      annRegistry.forEach((entry, idx) => {
-        const item = document.createElement('div');
-        item.className = 'ann-item';
-        item.dataset.idx = idx;
-        item.dataset.annIndex = entry.ann.index;
-
-        const dot = document.createElement('span');
-        dot.className = `ann-item-dot ${entry.ann.status}`;
-
-        const text = document.createElement('span');
-        text.className = 'ann-item-text';
-        text.textContent = `Pg ${entry.pg.page_num} · ${entry.ann.content || '(no text)'}`;
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'ann-delete-btn';
-        delBtn.title = 'Remove this annotation';
-        delBtn.innerHTML = '✕';
-        delBtn.addEventListener('click', e => {
-          e.stopPropagation();
-          toggleDelete(idx, entry.ann.index);
-        });
-
-        item.appendChild(dot);
-        item.appendChild(text);
-        item.appendChild(delBtn);
-        item.addEventListener('click', () => selectAnnotation(idx));
-        listEl.appendChild(item);
-      });
+      numbered.forEach(({ entry, idx }) => listEl.appendChild(buildAnnItem(entry, idx)));
     }
 
     // Load page images — eager for first 4, lazy (observer) for the rest.
@@ -706,45 +730,109 @@
     }
   }
 
+  function methodLabelFor(m) {
+    return m === 'visual' ? '🖼 Visual match' : m === 'position' ? '📌 Position kept' : '🔤 Text match';
+  }
+
+  function buildAnnItem(entry, idx) {
+    const a = entry.ann;
+    const item = document.createElement('div');
+    item.className = 'ann-item';
+    item.dataset.idx = idx;
+    const bodyId = 'ann-body-' + idx;
+    item.innerHTML = `
+      <button type="button" class="ann-head" aria-expanded="false" aria-controls="${bodyId}">
+        <span class="num-dot">${esc(a.number)}</span>
+        <span class="badge ann-status"></span>
+        <span class="ann-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="ann-body" id="${bodyId}" hidden>
+        ${a.content ? `<div class="dc-content">${esc(a.content)}</div>` : ''}
+        <div class="dc-row"><span>Page</span><span>${esc(entry.pg.page_num)}</span></div>
+        <div class="dc-row"><span>Author</span><span>${esc(a.author || '—')}</span></div>
+        <div class="dc-row"><span>Confidence</span><span>${esc(a.confidence)}</span></div>
+        <div class="dc-row"><span>Match</span><span>${esc(methodLabelFor(a.method))}</span></div>
+        <div class="dc-note">${esc(a.note)}</div>
+        <div class="ann-actions">
+          <button type="button" class="act-btn act-good">Looks Good</button>
+          <button type="button" class="act-btn act-remove">Remove</button>
+        </div>
+      </div>`;
+    item.querySelector('.ann-head').addEventListener('click', () => toggleItem(idx));
+    item.querySelector('.act-good').addEventListener('click', () => toggleReviewed(idx));
+    item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
+    refreshItem(item, entry);
+    return item;
+  }
+
+  // Sync badge + button labels with the item's state (removed / reviewed / matcher status)
+  function refreshItem(item, entry) {
+    const a = entry.ann;
+    const removed = deletedIndices.has(a.index);
+    const reviewed = reviewedIndices.has(a.index);
+    const state = removed ? 'deleted' : reviewed ? 'reviewed' : (a.status || 'moved');
+    const label = removed ? 'Removed' : reviewed ? '✓ Reviewed' : (STATUS_LABELS[a.status] || a.status);
+    const badge = item.querySelector('.ann-status');
+    badge.className = 'badge ann-status ' + state;
+    badge.textContent = label;
+    item.classList.toggle('deleted', removed);
+    const good = item.querySelector('.act-good');
+    good.style.display = removed ? 'none' : '';
+    good.textContent = reviewed ? 'Undo — mark as needs review' : 'Looks Good';
+    good.classList.toggle('secondary', reviewed);
+    const rm = item.querySelector('.act-remove');
+    rm.textContent = removed ? 'Restore' : 'Remove';
+    rm.classList.toggle('secondary', removed);
+  }
+
+  function setExpanded(idx, open) {
+    document.querySelectorAll('.ann-item').forEach(el => {
+      const isThis = el.dataset.idx === String(idx);
+      const on = isThis && open;
+      el.classList.toggle('open', on);
+      el.querySelector('.ann-body').hidden = !on;
+      el.querySelector('.ann-head').setAttribute('aria-expanded', on ? 'true' : 'false');
+    });
+  }
+
+  function toggleItem(idx) {
+    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+    if (!item) return;
+    if (item.classList.contains('open')) {
+      setExpanded(idx, false);
+      clearActiveRects();
+    } else {
+      selectAnnotation(idx);
+    }
+  }
+
+  function clearActiveRects() {
+    if (activeOldRect) activeOldRect.classList.remove('active');
+    if (activeNewRect) activeNewRect.classList.remove('active');
+    activeOldRect = null; activeNewRect = null;
+  }
+
   function selectAnnotation(idx) {
     const registry = window._annRegistry || [];
     const entry = registry[idx];
     if (!entry) return;
-    const { oldRectEl, newRectEl, oldScrollEl, newScrollEl, ann } = entry;
+    const { oldRectEl, newRectEl, oldScrollEl, newScrollEl } = entry;
 
-    // Deactivate previous pair
-    if (activeOldRect) activeOldRect.classList.remove('active');
-    if (activeNewRect) activeNewRect.classList.remove('active');
+    clearActiveRects();
     activeOldRect = oldRectEl;
     activeNewRect = newRectEl;
     oldRectEl.classList.add('active');
     newRectEl.classList.add('active');
 
-    // Update sidebar list highlight
-    document.querySelectorAll('.ann-item').forEach(el => el.classList.remove('active'));
+    // Expand this reference in the sidebar (rectangles without a number have no list item)
+    setExpanded(idx, true);
     const listItem = document.querySelector(`.ann-item[data-idx="${idx}"]`);
-    if (listItem) { listItem.classList.add('active'); listItem.scrollIntoView({ block: 'nearest' }); }
+    if (listItem) listItem.scrollIntoView({ block: 'nearest' });
 
     // Scroll both sides to center the annotation (use new side position)
     scrollRectIntoScrollEl(newRectEl, newScrollEl);
     scrollRectIntoScrollEl(oldRectEl, oldScrollEl);
-
-    // Scroll outer panel so this page block is visible
     newScrollEl.closest('.page-block')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-    const status = ann.status || 'moved';
-    const card = document.getElementById('detail-card');
-    const empty = document.getElementById('detail-empty');
-
-    const methodLabel = ann.method === 'visual' ? '🖼 Visual match' : ann.method === 'position' ? '📌 Position kept' : '🔤 Text match';
-    card.innerHTML = `
-      <div class="dc-status"><span class="badge ${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span> <span class="method-badge">${methodLabel}</span></div>
-      ${ann.content ? `<div class="dc-content">${esc(ann.content)}</div>` : ''}
-      <div class="dc-row"><span>Author</span><span>${esc(ann.author || '—')}</span></div>
-      <div class="dc-row"><span>Confidence</span><span>${esc(ann.confidence)}</span></div>
-      <div class="dc-note">${esc(ann.note)}</div>`;
-    card.classList.add('visible');
-    empty.style.display = 'none';
   }
 
   function esc(s) {
@@ -752,44 +840,33 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  // ── Delete / restore annotations ──────────────────────────────────────────
-  function toggleDelete(idx, annIndex) {
-    const registry = window._annRegistry || [];
-    const entry = registry[idx];
+  // ── Review / delete / restore annotations ─────────────────────────────────
+  function toggleReviewed(idx) {
+    const entry = (window._annRegistry || [])[idx];
     if (!entry) return;
+    const k = entry.ann.index;
+    if (reviewedIndices.has(k)) reviewedIndices.delete(k); else reviewedIndices.add(k);
+    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+    if (item) refreshItem(item, entry);
+  }
 
-    const listItem = document.querySelector(`.ann-item[data-idx="${idx}"]`);
-    const delBtn = listItem?.querySelector('.ann-delete-btn');
-    const dot = listItem?.querySelector('.ann-item-dot');
+  function toggleDelete(idx, annIndex) {
+    const entry = (window._annRegistry || [])[idx];
+    if (!entry) return;
+    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
 
     if (deletedIndices.has(annIndex)) {
-      // Restore
       deletedIndices.delete(annIndex);
-      listItem?.classList.remove('deleted');
-      if (dot) { dot.className = `ann-item-dot ${entry.ann.status}`; }
-      if (delBtn) delBtn.innerHTML = '✕';
-      // Show rects again
       if (entry.newRectEl) entry.newRectEl.style.display = '';
       if (entry.oldRectEl) entry.oldRectEl.style.display = '';
     } else {
-      // Delete
       deletedIndices.add(annIndex);
-      listItem?.classList.add('deleted');
-      if (dot) { dot.className = 'ann-item-dot deleted'; }
-      if (delBtn) delBtn.innerHTML = '↩';
-      // Hide rects on canvas
+      reviewedIndices.delete(annIndex);
       if (entry.newRectEl) entry.newRectEl.style.display = 'none';
       if (entry.oldRectEl) entry.oldRectEl.style.display = 'none';
-      // Deselect if this was selected
-      if (activeNewRect === entry.newRectEl) {
-        activeOldRect?.classList.remove('active');
-        activeNewRect?.classList.remove('active');
-        activeOldRect = null; activeNewRect = null;
-        document.querySelectorAll('.ann-item').forEach(el => el.classList.remove('active'));
-        document.getElementById('detail-card').classList.remove('visible');
-        document.getElementById('detail-empty').style.display = '';
-      }
+      if (activeNewRect === entry.newRectEl) clearActiveRects();
     }
+    if (item) refreshItem(item, entry);
     updateConfirmButton();
   }
 
@@ -862,8 +939,7 @@
     submitBtn.disabled = true; currentJobId = null;
     activeRect = null; activeOldRect = null; activeNewRect = null;
     deletedIndices = new Set();
-    document.getElementById('detail-card').classList.remove('visible');
-    document.getElementById('detail-empty').style.display = '';
+    reviewedIndices = new Set();
     document.getElementById('ann-list').innerHTML = '';
     document.getElementById('ann-list-header').style.display = 'none';
     document.getElementById('confirm-btn-label').textContent = 'Download Remapped PDF';
