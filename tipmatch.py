@@ -35,8 +35,60 @@ def _render_gray(page):
     scale = min(1.0, TARGET_PX_W / page.rect.width) if page.rect.width > TARGET_PX_W else 1.0
     pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), annots=False,
                           alpha=False, colorspace=fitz.csGRAY)
-    arr = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width)
+    arr = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width).copy()
+    fitz.TOOLS.store_shrink(100)
     return arr, scale
+
+
+def _thumb(page):
+    """Small fixed-size grayscale fingerprint of a whole page (annotations off)."""
+    sc = 96.0 / page.rect.width
+    pix = page.get_pixmap(matrix=fitz.Matrix(sc, sc), annots=False, alpha=False,
+                          colorspace=fitz.csGRAY)
+    a = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width)
+    fitz.TOOLS.store_shrink(100)      # drop MuPDF's decoded-image cache (keeps RAM flat on big docs)
+    a = cv2.resize(a, (48, 64), interpolation=cv2.INTER_AREA).astype(np.float32).ravel()
+    a -= a.mean()
+    n = np.linalg.norm(a)
+    return a / n if n > 1e-6 else a
+
+
+def align_pages(old_doc, new_doc, gap=0.25, floor=0.45):
+    """Monotonic old->new page mapping (sequence alignment on page thumbnails),
+    so inserted or deleted pages don't shift every later page.
+    Returns {old_page_index: new_page_index or None}."""
+    if not HAS_CV:
+        return {}
+    no, nn = len(old_doc), len(new_doc)
+    if no == 0 or nn == 0:
+        return {}
+    ot = [_thumb(old_doc[i]) for i in range(no)]
+    nt = [_thumb(new_doc[j]) for j in range(nn)]
+    S = np.array([[float(np.dot(a, b)) for b in nt] for a in ot])
+    NEG = -1e9
+    dp = np.zeros((no + 1, nn + 1)); bk = np.zeros((no + 1, nn + 1), dtype=np.int8)
+    for i in range(1, no + 1):
+        dp[i][0] = dp[i - 1][0] - gap; bk[i][0] = 1
+    for j in range(1, nn + 1):
+        dp[0][j] = dp[0][j - 1] - gap; bk[0][j] = 2
+    for i in range(1, no + 1):
+        for j in range(1, nn + 1):
+            m = dp[i - 1][j - 1] + (S[i - 1][j - 1] - floor if S[i - 1][j - 1] >= floor else NEG)
+            u = dp[i - 1][j] - gap      # old page has no partner (deleted)
+            l = dp[i][j - 1] - gap      # new page has no partner (inserted)
+            best = max(m, u, l)
+            dp[i][j] = best
+            bk[i][j] = 0 if best == m else (1 if best == u else 2)
+    mapping = {i: None for i in range(no)}
+    i, j = no, nn
+    while i > 0 or j > 0:
+        if i > 0 and j > 0 and bk[i][j] == 0:
+            mapping[i - 1] = j - 1; i -= 1; j -= 1
+        elif i > 0 and (j == 0 or bk[i][j] == 1):
+            i -= 1
+        else:
+            j -= 1
+    return mapping
 
 
 def anchor_for(info, ANNOT_FREETEXT, ANNOT_SQUARE):
@@ -96,6 +148,7 @@ def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
         return {}
 
     old_cache, new_cache = {}, {}
+    mapping = align_pages(old_doc, new_doc) if (len(old_doc) > 1 or len(new_doc) > 1) else {0: 0}
 
     def old_render(pn):
         if pn not in old_cache:
@@ -106,6 +159,12 @@ def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
         if pn not in new_cache:
             new_cache[pn] = _render_gray(new_doc[pn])
         return new_cache[pn]
+
+    def home_page(old_pn):
+        m = mapping.get(old_pn)
+        if m is not None:
+            return m
+        return min(old_pn, len(new_doc) - 1)
 
     out = {}
     for info in annots:
@@ -118,29 +177,35 @@ def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
         old_g, old_s = old_render(info.page_num)
         old_pw = old_page.rect.width
 
-        cands = []
-        if info.page_num < len(new_doc):
-            cands.append(info.page_num)
-        cands += [p for p in range(len(new_doc)) if p != info.page_num]
+        home = home_page(info.page_num)
+        # order: aligned page, then its neighbours, then everything else
+        cands = [home] + [p for p in (home - 1, home + 1, home - 2, home + 2)
+                          if 0 <= p < len(new_doc)]
+        cands += [p for p in range(len(new_doc)) if p not in cands]
 
         best = None
         flat = False
-        for pn in cands:
+        for k, pn in enumerate(cands):
             new_g, new_s = new_render(pn)
             m = _match_one(old_g, old_s, new_g, new_s, old_pw, pt)
             if m is None:
-                flat = True
+                flat = True          # patch carries no signal (blank / tiny): same on every page
                 break
             m["page"] = pn
             if best is None or m["score"] > best["score"]:
                 best = m
-            if m["score"] >= CONFIDENT and (m["score"] - m["second"]) >= MARGIN:
+            uniq = (m["score"] - m["second"]) >= MARGIN
+            # stop early only on a near-identical match; a merely "good" one
+            # may be a look-alike on the wrong page, so keep scanning
+            if uniq and m["score"] >= 0.95:
                 break
+            if k == 0 and uniq and m["score"] >= 0.85:
+                break                # aligned page matches well: trust it
 
-        if best is None:
-            out[info.index] = {"page": info.page_num, "shift": None, "score": 0.0,
-                               "second": 0.0, "confident": False,
-                               "note": "visual: area around the reference is blank — no anchor"}
+        if flat or best is None:
+            out[info.index] = {"page": home, "shift": None, "score": 0.0, "second": 0.0,
+                               "confident": False, "flat": True,
+                               "note": "visual: no distinct content at this spot to match — placed relative to the page"}
             continue
 
         tip_new = best["tip_new"]
@@ -160,10 +225,10 @@ def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
                         f"(score {best['score']:.2f} vs {best['second']:.2f})")
         out[info.index] = {"page": best["page"], "shift": shift,
                            "score": best["score"], "second": best["second"],
-                           "confident": confident, "note": note}
+                           "confident": confident, "flat": False, "note": note}
 
-    # Unconfident anchors borrow the shift of the nearest confident neighbour on
-    # the same page (content between two anchors moves with them).
+    # Unconfident / flat anchors borrow the shift AND page of the nearest confident
+    # neighbour on the same old page (content between anchors moves together).
     by_page = {}
     for info in annots:
         r = out.get(info.index)
@@ -179,8 +244,8 @@ def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
         if neigh:
             _, sh, pg = min(neigh, key=lambda n: abs(n[0] - pt[1]))
             r["fallback_shift"] = sh
-            r["fallback_page"] = pg
+            r["fallback_page"] = min(pg, len(new_doc) - 1)
         else:
             r["fallback_shift"] = (0.0, 0.0)
-            r["fallback_page"] = info.page_num
+            r["fallback_page"] = min(home_page(info.page_num), len(new_doc) - 1)
     return out

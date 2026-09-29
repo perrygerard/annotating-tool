@@ -800,6 +800,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
         "moved": 0,
         "needs_look": 0,
         "content_removed": 0,
+        "skipped": [],
         "annotations": []
     }
 
@@ -812,6 +813,11 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             atype = annot.type  # (int, name)
             # Skip popups — they travel with their parent annotation
             if atype[0] == ANNOT_POPUP:
+                continue
+            # Only text callouts and rectangles are remapped. Anything else (bare arrow
+            # lines, highlights, ...) is reported back instead of being silently dropped.
+            if atype[0] not in (ANNOT_FREETEXT, ANNOT_SQUARE):
+                results["skipped"].append({"page": page_num + 1, "type": atype[1]})
                 continue
 
             vertices = list(annot.vertices or [])
@@ -943,20 +949,15 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     for page_num in range(len(old_doc)):
         page_is_image[page_num] = is_image_page(old_doc[page_num])
 
-    # ── 2b. Pre-compute content removal info for image pages ─────────────────
-    # For image-based pages, detect where content was removed and by how much,
-    # so we can apply the correct vertical shift to annotations below the removal.
-    page_removal_info = {}  # key: old_page_idx -> (boundary_y, shift_y)
-    for old_page_num in range(len(old_doc)):
-        if not page_is_image.get(old_page_num, False):
-            continue
-        old_page = old_doc[old_page_num]
-        new_page_num = old_page_num if old_page_num < len(new_doc) else len(new_doc) - 1
-        new_page = new_doc[new_page_num]
-        boundary_y, shift_y = detect_removal_boundary(old_page, new_page)
-        page_removal_info[old_page_num] = (boundary_y, shift_y)
-        if boundary_y is not None:
-            print(f"  Page {old_page_num+1}: removal boundary at y={boundary_y:.0f}, shift={shift_y:+.0f}")
+    # ── 2b. Legacy page-wide removal boundary (only computed if a page needs it) ─
+    page_removal_info = {}
+
+    def get_removal_info(old_page_num):
+        if old_page_num not in page_removal_info:
+            old_page = old_doc[old_page_num]
+            new_page_num = old_page_num if old_page_num < len(new_doc) else len(new_doc) - 1
+            page_removal_info[old_page_num] = detect_removal_boundary(old_page, new_doc[new_page_num])
+        return page_removal_info[old_page_num]
 
     # ── 2c. Tip-anchored visual matching (image pages) ───────────────────────
     # Match the pixels around each annotation's referenced point, per annotation.
@@ -990,7 +991,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 target_page = tm["fallback_page"]
                 info.matched = False
                 info.match_confidence = tm["score"]
-                if tm["score"] < 0.5:
+                if tm["score"] < 0.5 and not tm.get("flat"):
                     info.status = "content_removed"
                     results["content_removed"] += 1
                 else:
@@ -1006,7 +1007,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             if page_image_mode:
                 old_page = old_doc[info.page_num]
                 new_pn = info.page_num if info.page_num < len(new_doc) else len(new_doc) - 1
-                removal_info = page_removal_info.get(info.page_num, (None, 0))
+                removal_info = get_removal_info(info.page_num)
                 boundary_y, shift_y = removal_info
 
                 # Determine y-shift for this annotation
@@ -1172,18 +1173,16 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     # Group annotations by page for the preview renderer
     annots_by_page = {}
     for info in all_annots:
-        pg = info.page_num
-        if pg not in annots_by_page:
-            annots_by_page[pg] = []
-        annots_by_page[pg].append(info)
+        key = (info.page_num, _out_page(info))     # (page in old PDF, page in new PDF)
+        annots_by_page.setdefault(key, []).append(info)
 
     pages_preview = []
     preview_doc = fitz.open(new_pdf_path)
     old_preview_doc = fitz.open(old_pdf_path)
-    for page_num in sorted(annots_by_page.keys()):
-        if page_num >= len(preview_doc):
+    for (page_num, out_pn) in sorted(annots_by_page.keys()):
+        if out_pn >= len(preview_doc):
             continue
-        page = preview_doc[page_num]
+        page = preview_doc[out_pn]
         pw, ph = page.rect.width, page.rect.height
         S_pg = _scale(pw)
         tot_w = pw + SIDEBAR_BASE * S_pg      # output page = original + sidebar
@@ -1196,7 +1195,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             old_pw, old_ph = old_page.rect.width, old_page.rect.height
 
         overlay_annots = []
-        for info in annots_by_page[page_num]:
+        for info in annots_by_page[(page_num, out_pn)]:
             new_r = info.new_rect if info.new_rect else info.rect
             old_r = info.rect  # original position in old PDF
 
@@ -1248,6 +1247,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             })
         pages_preview.append({
             "page_num": page_num + 1,
+            "new_page_num": out_pn + 1,
             "width": tot_w,
             "content_frac": pw / tot_w,   # share of the output width that is page (rest = sidebar)
             "height": ph,

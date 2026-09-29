@@ -396,6 +396,8 @@
       </button>
       <div class="confirm-hint" id="confirm-hint"></div>
 
+      <div class="list-hint" id="skipped-note" style="display:none;"></div>
+
       <!-- Legend -->
       <div class="legend">
         <div class="legend-item"><span class="legend-swatch moved"></span> Moved — repositioned confidently</div>
@@ -522,6 +524,13 @@
       else if (a.status === 'content_removed') removed++;
       else review++;
     });
+    const sk = results.skipped || [];
+    const skEl = document.getElementById('skipped-note');
+    if (sk.length) {
+      const kinds = [...new Set(sk.map(x => x.type))].join(', ');
+      skEl.textContent = `${sk.length} unsupported annotation${sk.length === 1 ? '' : 's'} skipped (${kinds}) on page${new Set(sk.map(x => x.page)).size === 1 ? '' : 's'} ${[...new Set(sk.map(x => x.page))].join(', ')}.`;
+      skEl.style.display = '';
+    } else { skEl.style.display = 'none'; }
     document.getElementById('stat-total').textContent  = results.total;
     document.getElementById('stat-moved').textContent  = moved;
     document.getElementById('stat-review').textContent = review;
@@ -690,7 +699,9 @@
 
       const numLabel = document.createElement('div');
       numLabel.className = 'page-num-label';
-      numLabel.textContent = `Page ${pg.page_num}`;
+      numLabel.textContent = (pg.new_page_num && pg.new_page_num !== pg.page_num)
+        ? `Page ${pg.page_num} → ${pg.new_page_num} in new PDF`
+        : `Page ${pg.page_num}`;
       block.appendChild(numLabel);
 
       const pair = document.createElement('div');
@@ -709,7 +720,7 @@
 
       // New (right) side
       const newSide = makePageSide(
-        `/preview/${currentJobId}/${pg.page_num}`,
+        `/preview/${currentJobId}/${pg.new_page_num || pg.page_num}`,
         pg.width, pg.height, pg.aspect,
         pg.annotations, 'ann-rect', '', isTall, pg.content_frac || 1
       );
