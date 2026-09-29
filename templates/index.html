@@ -56,61 +56,93 @@
     .progress-bar-wrap { background: var(--border); border-radius: 99px; height: 6px; overflow: hidden; }
     .progress-bar { height: 100%; background: var(--accent); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
 
-    /* ── Results screen: two-column layout ── */
+    /* ── Results screen ── */
     #results-screen { display: none; flex: 1; min-height: 0; overflow: hidden; }
     .results-layout { display: flex; height: 100%; min-height: calc(100vh - 56px); overflow: hidden; }
 
-    /* Left panel — page previews: takes ~80% of available width */
+    /* Main pages area — fills everything except the sidebar */
     .pages-panel {
       flex: 1 1 0%; min-width: 0; overflow-y: auto;
-      padding: 20px 32px 60px;
+      padding: 20px 24px 60px;
       background: #e9e8f3;
       border-right: 1px solid var(--border);
     }
-    .pages-panel h2 { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); margin-bottom: 16px; }
+    .pages-panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .pages-panel-header h2 { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); }
+    /* Column labels */
+    .col-labels {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+      margin-bottom: 10px;
+    }
+    .col-label {
+      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--ink-light);
+      padding: 4px 8px; background: rgba(255,255,255,0.5);
+      border-radius: 4px; text-align: center;
+    }
 
-    .page-block { margin-bottom: 32px; }
-    .page-label { font-size: 0.7rem; font-weight: 600; color: var(--ink-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .page-block { margin-bottom: 36px; }
+    .page-num-label { font-size: 0.68rem; font-weight: 600; color: var(--ink-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
 
-    /* Scrollable viewport for tall pages */
+    /* Side-by-side pair */
+    .page-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* Each side: scrollable for tall pages */
+    .page-side { min-width: 0; }
+    .page-side-label {
+      font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--ink-light); margin-bottom: 4px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .page-side-label .side-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .side-dot.old { background: var(--ink-light); }
+    .side-dot.new { background: var(--accent); }
+
     .page-scroll {
       max-height: 80vh;
       overflow-y: auto;
       overflow-x: hidden;
-      box-shadow: 0 2px 16px rgba(0,0,0,0.15);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.14);
       border-radius: 4px;
       background: white;
       scroll-behavior: smooth;
     }
-    /* Inner frame holds the actual image + SVG at natural height */
     .page-frame {
       position: relative;
       width: 100%;
-      /* height set by JS once the image loads */
     }
     .page-frame img { display: block; width: 100%; height: auto; }
 
-    /* Scroll-hint gradient when page is taller than viewport */
+    /* Tall-page fade hint */
     .page-scroll.is-tall::after {
-      content: '';
-      display: block;
-      position: sticky;
-      bottom: 0; left: 0; right: 0;
-      height: 32px;
-      background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.85));
+      content: ''; display: block; position: sticky;
+      bottom: 0; left: 0; right: 0; height: 28px;
+      background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.8));
       pointer-events: none;
     }
 
     /* Annotation overlays */
     .overlay-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-    .ann-rect { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 2px; rx: 2; transition: fill 0.15s; }
-    .ann-rect.moved    { stroke: var(--success); }
-    .ann-rect.needs_look { stroke: var(--warn); }
+
+    /* New-side overlays: full status color */
+    .ann-rect { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 2px; transition: fill 0.15s; }
+    .ann-rect.moved         { stroke: var(--success); }
+    .ann-rect.needs_look    { stroke: var(--warn); }
     .ann-rect.content_removed { stroke: var(--removed); }
-    .ann-rect.moved:hover    { fill: rgba(45,122,79,0.15); }
-    .ann-rect.needs_look:hover { fill: rgba(180,83,9,0.15); }
-    .ann-rect.content_removed:hover { fill: rgba(124,58,237,0.15); }
-    .ann-rect.active { fill: rgba(74,111,165,0.2); stroke: var(--accent); stroke-width: 2.5px; }
+    .ann-rect.moved:hover         { fill: rgba(45,122,79,0.12); }
+    .ann-rect.needs_look:hover    { fill: rgba(180,83,9,0.12); }
+    .ann-rect.content_removed:hover { fill: rgba(124,58,237,0.12); }
+    .ann-rect.active { fill: rgba(74,111,165,0.18); stroke: var(--accent); stroke-width: 2.5px; }
+
+    /* Old-side overlays: muted ghost style */
+    .ann-rect-old { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 1.5px; stroke-dasharray: 4 3; transition: fill 0.15s; }
+    .ann-rect-old.moved         { stroke: var(--success); opacity: 0.45; }
+    .ann-rect-old.needs_look    { stroke: var(--warn); opacity: 0.45; }
+    .ann-rect-old.content_removed { stroke: var(--removed); opacity: 0.45; }
+    .ann-rect-old.active { opacity: 1; fill: rgba(74,111,165,0.12); stroke: var(--accent); stroke-dasharray: none; }
 
     /* Right panel — detail sidebar: fixed narrow width */
     .detail-panel {
@@ -163,6 +195,7 @@
     .badge.moved            { background: var(--success-bg); color: var(--success); }
     .badge.needs_look       { background: var(--warn-bg);    color: var(--warn); }
     .badge.content_removed  { background: var(--removed-bg); color: var(--removed); }
+    .method-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 0.69rem; font-weight: 500; background: #f0f0f8; color: var(--ink-light); margin-left: 4px; }
 
     .reset-btn { display: block; width: 100%; padding: 9px; background: transparent; color: var(--ink-light); border: 1px solid var(--border); border-radius: 8px; font-size: 0.82rem; cursor: pointer; margin-top: 12px; }
     .reset-btn:hover { background: var(--bg); }
@@ -272,7 +305,13 @@
 
     <!-- Page previews -->
     <div class="pages-panel" id="pages-panel">
-      <h2>Pages with annotations</h2>
+      <div class="pages-panel-header">
+        <h2>Pages with annotations</h2>
+      </div>
+      <div class="col-labels">
+        <div class="col-label">← Original</div>
+        <div class="col-label">Updated →</div>
+      </div>
       <!-- Populated by JS -->
     </div>
 
@@ -419,71 +458,128 @@
 
     // Render page thumbnails with overlays
     const panel = document.getElementById('pages-panel');
-    while (panel.children.length > 1) panel.removeChild(panel.lastChild);
+    // Clear everything after the two header elements (h2 div + col-labels div)
+    while (panel.children.length > 2) panel.removeChild(panel.lastChild);
 
-    // Registry: index → { rectEl, scrollEl, ann } for sidebar list clicks
+    // Registry: index → { newRectEl, oldRectEl, newScrollEl, oldScrollEl, ann, pg }
     const annRegistry = [];
+
+    function makeSVGRect(cls, x, y, w, h, vbW, vbH) {
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('class', cls);
+      const minPx = 10;
+      let rx = x * vbW, ry = y * vbH, rw = w * vbW, rh = h * vbH;
+      if (rw < minPx) { rx -= (minPx - rw)/2; rw = minPx; }
+      if (rh < minPx) { ry -= (minPx - rh)/2; rh = minPx; }
+      rect.setAttribute('x', rx);
+      rect.setAttribute('y', ry);
+      rect.setAttribute('width', rw);
+      rect.setAttribute('height', rh);
+      rect.setAttribute('rx', 2);
+      return rect;
+    }
+
+    function makePageSide(imgSrc, vbW, vbH, aspect, annots, rectClass, coordKey, isTall) {
+      const side = document.createElement('div');
+      side.className = 'page-side';
+
+      const scroll = document.createElement('div');
+      scroll.className = 'page-scroll' + (isTall ? ' is-tall' : '');
+
+      const frame = document.createElement('div');
+      frame.className = 'page-frame';
+
+      const img = document.createElement('img');
+      img.dataset.src = imgSrc;
+      img.alt = '';
+      frame.appendChild(img);
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'overlay-svg');
+      svg.setAttribute('viewBox', `0 0 ${vbW} ${vbH}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
+
+      const rects = [];
+      annots.forEach(ann => {
+        const x = ann[coordKey + 'x'] !== undefined ? ann[coordKey + 'x'] : ann.x;
+        const y = ann[coordKey + 'y'] !== undefined ? ann[coordKey + 'y'] : ann.y;
+        const w = ann[coordKey + 'w'] !== undefined ? ann[coordKey + 'w'] : ann.w;
+        const h = ann[coordKey + 'h'] !== undefined ? ann[coordKey + 'h'] : ann.h;
+        const r = makeSVGRect(`${rectClass} ${ann.status}`, x, y, w, h, vbW, vbH);
+        svg.appendChild(r);
+        rects.push(r);
+      });
+
+      frame.appendChild(svg);
+      scroll.appendChild(frame);
+      side.appendChild(scroll);
+      return { sideEl: side, scrollEl: scroll, rects };
+    }
 
     (results.pages || []).forEach(pg => {
       const block = document.createElement('div');
       block.className = 'page-block';
 
-      const label = document.createElement('div');
-      label.className = 'page-label';
-      label.textContent = `Page ${pg.page_num}`;
-      block.appendChild(label);
+      const numLabel = document.createElement('div');
+      numLabel.className = 'page-num-label';
+      numLabel.textContent = `Page ${pg.page_num}`;
+      block.appendChild(numLabel);
 
-      // Scrollable wrapper for tall pages
-      const scrollEl = document.createElement('div');
-      scrollEl.className = 'page-scroll';
-      if (pg.aspect > 1.5) scrollEl.classList.add('is-tall'); // flag very tall pages
+      const pair = document.createElement('div');
+      pair.className = 'page-pair';
 
-      const frame = document.createElement('div');
-      frame.className = 'page-frame';
+      const isTall = pg.aspect > 1.5;
+      const oldW = pg.old_width || pg.width;
+      const oldH = pg.old_height || pg.height;
 
-      // Page image — lazy loaded
-      const img = document.createElement('img');
-      img.dataset.src = `/preview/${currentJobId}/${pg.page_num}`;
-      img.alt = `Page ${pg.page_num}`;
-      frame.appendChild(img);
+      // Old (left) side
+      const oldSide = makePageSide(
+        `/preview-original/${currentJobId}/${pg.page_num}`,
+        oldW, oldH, pg.old_aspect || pg.aspect,
+        pg.annotations, 'ann-rect-old', 'old_', isTall
+      );
 
-      // SVG overlay — sized to match the natural image dimensions
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'overlay-svg');
-      svg.setAttribute('viewBox', `0 0 ${pg.width} ${pg.height}`);
-      svg.setAttribute('preserveAspectRatio', 'none');
+      // New (right) side
+      const newSide = makePageSide(
+        `/preview/${currentJobId}/${pg.page_num}`,
+        pg.width, pg.height, pg.aspect,
+        pg.annotations, 'ann-rect', '', isTall
+      );
 
-      pg.annotations.forEach(ann => {
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('class', `ann-rect ${ann.status}`);
-        rect.setAttribute('x', ann.x * pg.width);
-        rect.setAttribute('y', ann.y * pg.height);
-        rect.setAttribute('width', ann.w * pg.width);
-        rect.setAttribute('height', ann.h * pg.height);
-        rect.setAttribute('rx', 2);
-
-        // Minimum clickable size
-        const minPx = 12;
-        const rx = parseFloat(rect.getAttribute('x'));
-        const ry = parseFloat(rect.getAttribute('y'));
-        const rw = parseFloat(rect.getAttribute('width'));
-        const rh = parseFloat(rect.getAttribute('height'));
-        if (rw < minPx) { rect.setAttribute('x', rx - (minPx - rw)/2); rect.setAttribute('width', minPx); }
-        if (rh < minPx) { rect.setAttribute('y', ry - (minPx - rh)/2); rect.setAttribute('height', minPx); }
-
+      // Register annotations (pair old+new rects together)
+      pg.annotations.forEach((ann, i) => {
         const idx = annRegistry.length;
-        annRegistry.push({ rectEl: rect, scrollEl, ann, pg });
-        rect.addEventListener('click', () => selectAnnotation(idx));
-        svg.appendChild(rect);
+        annRegistry.push({
+          oldRectEl: oldSide.rects[i],
+          newRectEl: newSide.rects[i],
+          oldScrollEl: oldSide.scrollEl,
+          newScrollEl: newSide.scrollEl,
+          ann, pg
+        });
+        const handler = () => selectAnnotation(idx);
+        oldSide.rects[i].addEventListener('click', handler);
+        newSide.rects[i].addEventListener('click', handler);
       });
 
-      frame.appendChild(svg);
-      scrollEl.appendChild(frame);
-      block.appendChild(scrollEl);
+      // Sync scroll between old and new sides
+      let syncing = false;
+      oldSide.scrollEl.addEventListener('scroll', () => {
+        if (syncing) return; syncing = true;
+        newSide.scrollEl.scrollTop = oldSide.scrollEl.scrollTop;
+        syncing = false;
+      });
+      newSide.scrollEl.addEventListener('scroll', () => {
+        if (syncing) return; syncing = true;
+        oldSide.scrollEl.scrollTop = newSide.scrollEl.scrollTop;
+        syncing = false;
+      });
+
+      pair.appendChild(oldSide.sideEl);
+      pair.appendChild(newSide.sideEl);
+      block.appendChild(pair);
       panel.appendChild(block);
     });
 
-    // Store registry globally so sidebar list can reach it
     window._annRegistry = annRegistry;
 
     // Build annotation index list in sidebar
@@ -522,48 +618,56 @@
   }
 
   // ── Annotation selection ───────────────────────────────────────────────────
+  let activeOldRect = null, activeNewRect = null;
+
+  function scrollRectIntoScrollEl(rectEl, scrollEl) {
+    const svgEl = rectEl.closest('svg');
+    const frameEl = svgEl ? svgEl.closest('.page-frame') : null;
+    if (!frameEl || !scrollEl) return;
+    const frameH = frameEl.scrollHeight;
+    const vb = svgEl.viewBox.baseVal;
+    const annY = parseFloat(rectEl.getAttribute('y'));
+    const annH = parseFloat(rectEl.getAttribute('height'));
+    if (vb && vb.height && frameH) {
+      const pixY = (annY / vb.height) * frameH;
+      const pixH = (annH / vb.height) * frameH;
+      scrollEl.scrollTop = Math.max(0, pixY - scrollEl.clientHeight / 2 + pixH / 2);
+    }
+  }
+
   function selectAnnotation(idx) {
     const registry = window._annRegistry || [];
     const entry = registry[idx];
     if (!entry) return;
-    const { rectEl, scrollEl, ann } = entry;
+    const { oldRectEl, newRectEl, oldScrollEl, newScrollEl, ann } = entry;
 
-    // Deactivate previous
-    if (activeRect) activeRect.classList.remove('active');
-    activeRect = rectEl;
-    rectEl.classList.add('active');
+    // Deactivate previous pair
+    if (activeOldRect) activeOldRect.classList.remove('active');
+    if (activeNewRect) activeNewRect.classList.remove('active');
+    activeOldRect = oldRectEl;
+    activeNewRect = newRectEl;
+    oldRectEl.classList.add('active');
+    newRectEl.classList.add('active');
 
     // Update sidebar list highlight
     document.querySelectorAll('.ann-item').forEach(el => el.classList.remove('active'));
     const listItem = document.querySelector(`.ann-item[data-idx="${idx}"]`);
     if (listItem) { listItem.classList.add('active'); listItem.scrollIntoView({ block: 'nearest' }); }
 
-    // Scroll the page viewport so the annotation is centered
-    // The rect's y attribute is in SVG coords; map to pixel position in the frame
-    const svgEl = rectEl.closest('svg');
-    const frameEl = svgEl ? svgEl.closest('.page-frame') : null;
-    if (frameEl && scrollEl) {
-      const frameH = frameEl.offsetHeight || frameEl.getBoundingClientRect().height;
-      const vb = svgEl.viewBox.baseVal;
-      const annY = parseFloat(rectEl.getAttribute('y'));
-      const annH = parseFloat(rectEl.getAttribute('height'));
-      if (vb && vb.height) {
-        const pixY = (annY / vb.height) * frameH;
-        const pixH = (annH / vb.height) * frameH;
-        const scrollTarget = pixY - (scrollEl.clientHeight / 2) + pixH / 2;
-        scrollEl.scrollTop = Math.max(0, scrollTarget);
-      }
-    }
+    // Scroll both sides to center the annotation (use new side position)
+    scrollRectIntoScrollEl(newRectEl, newScrollEl);
+    scrollRectIntoScrollEl(oldRectEl, oldScrollEl);
 
-    // Scroll outer pages panel so the page block is visible
-    scrollEl.closest('.page-block')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Scroll outer panel so this page block is visible
+    newScrollEl.closest('.page-block')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     const status = ann.status || 'moved';
     const card = document.getElementById('detail-card');
     const empty = document.getElementById('detail-empty');
 
+    const methodLabel = ann.method === 'visual' ? '🖼 Visual match' : ann.method === 'position' ? '📌 Position kept' : '🔤 Text match';
     card.innerHTML = `
-      <div class="dc-status"><span class="badge ${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span></div>
+      <div class="dc-status"><span class="badge ${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span> <span class="method-badge">${methodLabel}</span></div>
       ${ann.content ? `<div class="dc-content">${esc(ann.content)}</div>` : ''}
       <div class="dc-row"><span>Author</span><span>${esc(ann.author || '—')}</span></div>
       <div class="dc-row"><span>Confidence</span><span>${esc(ann.confidence)}</span></div>
@@ -590,7 +694,7 @@
     ['name-annotated','name-new'].forEach(id => document.getElementById(id).textContent = '');
     inputAnnotated.value = ''; inputNew.value = '';
     submitBtn.disabled = true; currentJobId = null;
-    activeRect = null;
+    activeRect = null; activeOldRect = null; activeNewRect = null;
     document.getElementById('detail-card').classList.remove('visible');
     document.getElementById('detail-empty').style.display = '';
     document.getElementById('ann-list').innerHTML = '';

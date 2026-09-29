@@ -66,10 +66,19 @@ def remap():
     def run_job():
         try:
             results = process_pdfs(annotated_path, new_path, output_path)
-            jobs[job_id] = {"status": "done", "results": results, "output_path": output_path}
+            # Keep annotated_path for side-by-side preview; new_path not needed
+            try:
+                os.remove(new_path)
+            except Exception:
+                pass
+            jobs[job_id] = {
+                "status": "done",
+                "results": results,
+                "output_path": output_path,
+                "annotated_path": annotated_path,
+            }
         except Exception as e:
             jobs[job_id] = {"status": "error", "message": str(e)}
-        finally:
             for p in [annotated_path, new_path]:
                 try:
                     os.remove(p)
@@ -124,6 +133,31 @@ def preview(job_id, page_num):
         return Response(png_bytes, mimetype="image/png",
                         headers={"Cache-Control": "private, max-age=300"})
     except Exception as e:
+        abort(500)
+
+
+@app.route("/preview-original/<job_id>/<int:page_num>")
+def preview_original(job_id, page_num):
+    """Render a page of the original annotated PDF as a PNG (no annotations drawn)."""
+    job = jobs.get(job_id)
+    if not job or job["status"] != "done":
+        abort(404)
+    annotated_path = job.get("annotated_path")
+    if not annotated_path or not os.path.exists(annotated_path):
+        abort(404)
+    try:
+        doc = fitz.open(annotated_path)
+        if page_num < 1 or page_num > len(doc):
+            abort(404)
+        page = doc[page_num - 1]
+        mat = fitz.Matrix(1.5, 1.5)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        png_bytes = pix.tobytes("png")
+        doc.close()
+        from flask import Response
+        return Response(png_bytes, mimetype="image/png",
+                        headers={"Cache-Control": "private, max-age=300"})
+    except Exception:
         abort(500)
 
 
