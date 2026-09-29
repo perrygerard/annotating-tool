@@ -69,12 +69,14 @@ def remap():
             # Keep new_path for re-writes via /confirm; keep annotated_path for previews
             all_annots = results.pop("_all_annots", [])
             new_pdf_path_stored = results.pop("_new_pdf_path", new_path)
+            preview_path = results.pop("_preview_path", None)
             jobs[job_id] = {
                 "status": "done",
                 "results": results,
                 "output_path": output_path if os.path.exists(output_path) else None,
                 "annotated_path": annotated_path,
                 "new_pdf_path": new_pdf_path_stored,
+                "preview_path": preview_path,
                 "_all_annots": all_annots,  # kept server-side only, not sent to client
             }
         except Exception as e:
@@ -128,6 +130,16 @@ def confirm(job_id):
 
     data = request.get_json(silent=True) or {}
     deleted = set(data.get("deleted_indices", []))
+    # Manual dot positions: { "<annotation index>": [x_frac, y_frac] } (fractions of output page)
+    overrides = {}
+    for k, v in (data.get("positions") or {}).items():
+        try:
+            idx = int(k)
+            fx, fy = float(v[0]), float(v[1])
+        except (ValueError, TypeError, IndexError):
+            continue
+        if 0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0:
+            overrides[idx] = (fx, fy)
 
     all_annots = job.get("_all_annots")
     new_pdf_path = job.get("new_pdf_path") or job.get("annotated_path")
@@ -140,7 +152,7 @@ def confirm(job_id):
         return jsonify({"error": "Source PDF no longer available — please re-process"}), 500
 
     try:
-        write_pdf(all_annots, new_pdf_path, output_path, skip_indices=deleted)
+        write_pdf(all_annots, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides)
         # Update the results annotation list to reflect deletions
         results = job["results"]
         results["annotations"] = [
@@ -176,7 +188,10 @@ def preview(job_id, page_num):
     job = jobs.get(job_id)
     if not job or job["status"] != "done":
         abort(404)
-    output_path = job.get("output_path")
+    # Prefer the dot-free preview copy (the web view draws its own markers)
+    output_path = job.get("preview_path")
+    if not output_path or not os.path.exists(output_path):
+        output_path = job.get("output_path")
     # Fall back to the new PDF if output not written
     if not output_path or not os.path.exists(output_path):
         output_path = job.get("new_pdf_path")

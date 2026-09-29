@@ -1246,6 +1246,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
         pages_preview.append({
             "page_num": page_num + 1,
             "width": tot_w,
+            "content_frac": pw / tot_w,   # share of the output width that is page (rest = sidebar)
             "height": ph,
             "aspect": ph / tot_w,
             "old_width": old_pw,
@@ -1259,6 +1260,10 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
     # ── 5. Write output PDF ───────────────────────────────────────────────────
     write_pdf(all_annots, new_pdf_path, output_path, skip_indices=set())
+    # Preview copy WITHOUT page dots: the web view draws its own (draggable) markers
+    preview_path = output_path[:-4] + "_preview.pdf" if output_path.endswith(".pdf") else output_path + "_preview"
+    write_pdf(all_annots, new_pdf_path, preview_path, skip_indices=set(), draw_dots=False)
+    results["_preview_path"] = preview_path
     old_doc.close()
     new_doc.close()
 
@@ -1294,14 +1299,48 @@ def _scale(pw):
     return max(1.0, pw / 900.0)
 
 
+PIN_L = 1.75   # pin length: distance from body centre to the point, in body radii
+
+
 def _dot_position(info, pw, ph, dot_r, S):
-    """Final dot centre on the page: up-and-right of the tip, clamped inside the page."""
-    dx, dy = _anchor_point(info)
-    dx += dot_r * 0.9 + 2 * S
-    dy -= dot_r * 0.9 + 2 * S
-    dx = max(dot_r + 1, min(dx, pw - dot_r - 1))
-    dy = max(dot_r + 1, min(dy, ph - dot_r - 1))
-    return dx, dy
+    """Where the pin's POINT goes: the referenced spot, nudged 2*S toward the body
+    (up-right) so the point stops just short of the superscript instead of on it."""
+    x, y = _anchor_point(info)
+    g = 2 * S / math.sqrt(2)
+    return x + g, y - g
+
+
+def _pin_body_center(px, py, r):
+    """Body centre for a pin whose point is (px, py): up and to the right."""
+    off = r * PIN_L / math.sqrt(2)
+    return px + off, py - off
+
+
+def _pin_polygon(cx, cy, px, py, r, steps=48):
+    """Teardrop outline: point (px,py) + tangent lines + arc around the far side."""
+    dx, dy = px - cx, py - cy
+    d = math.hypot(dx, dy)
+    if d < r * 1.15:                      # point is inside/at the body: plain circle
+        return [(cx + r * math.cos(2 * math.pi * i / steps),
+                 cy + r * math.sin(2 * math.pi * i / steps)) for i in range(steps)]
+    th = math.atan2(dy, dx)
+    phi = math.acos(r / d)
+    a0, a1 = th + phi, th + 2 * math.pi - phi
+    pts = [(cx + r * math.cos(a0 + (a1 - a0) * i / steps),
+            cy + r * math.sin(a0 + (a1 - a0) * i / steps)) for i in range(steps + 1)]
+    pts.append((px, py))
+    return pts
+
+
+def _draw_pin(page, cx, cy, px, py, number, radius):
+    """Black teardrop pin with white number; point at (px,py), body centred (cx,cy)."""
+    page.draw_polyline([fitz.Point(x, y) for x, y in _pin_polygon(cx, cy, px, py, radius)],
+                       color=None, fill=(0, 0, 0), closePath=True)
+    label = str(number)
+    fontsize = radius * (1.1 if len(label) == 1 else 0.85)
+    tw = fitz.get_text_length(label, fontname="helv", fontsize=fontsize)
+    page.insert_text(fitz.Point(cx - tw / 2, cy + fontsize * 0.35), label,
+                     fontname="helv", fontsize=fontsize, color=(1, 1, 1))
 
 
 def _out_page(info):
@@ -1354,7 +1393,8 @@ def _draw_number_dot(page, cx, cy, number, radius=7):
                      fontname="helv", fontsize=fontsize, color=(1, 1, 1))
 
 
-def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
+def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
+              overrides=None, draw_dots=True):
     """Write annotations to a new PDF with a numbered reference sidebar.
 
     Each page is expanded rightward by SIDEBAR_W points. Annotations get:
@@ -1363,6 +1403,9 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
     """
     if skip_indices is None:
         skip_indices = set()
+    # overrides: {annot.index: (x_frac, y_frac)} — manual dot positions, as fractions of
+    # the full output page (original page + sidebar) width and of page height.
+    overrides = overrides or {}
 
     SIDEBAR_BG = (0.97, 0.97, 0.97)   # near-white background
     DIVIDER_COLOR = (0.8, 0.8, 0.8)   # light grey divider
@@ -1469,9 +1512,20 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None):
         for info in annots_on_page:
             num = global_num[(_out_page(info), info.index)]
 
-            dx, dy = _dot_position(info, pw, ph, DOT_R, S)
+            if not draw_dots:
+                continue
+            if info.index in overrides:
+                # Manually placed: the pin's POINT goes exactly where it was dropped
+                fx, fy = overrides[info.index]
+                px, py = fx * (pw + SIDEBAR_W), fy * ph
+            else:
+                px, py = _dot_position(info, pw, ph, DOT_R, S)
 
-            _draw_number_dot(page, dx, dy, num, radius=DOT_R)
+            # Keep the body on the page; the point stays on the target
+            cx, cy = _pin_body_center(px, py, DOT_R)
+            cx = max(DOT_R + 1, min(cx, pw - DOT_R - 1))
+            cy = max(DOT_R + 1, min(cy, ph - DOT_R - 1))
+            _draw_pin(page, cx, cy, px, py, num, DOT_R)
 
     # Rectangles are intentionally not written: the numbered dots replace them.
 

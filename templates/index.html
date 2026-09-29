@@ -153,11 +153,17 @@
     .ann-rect.active { fill: rgba(74,111,165,0.18); stroke: var(--accent); stroke-width: 2.5px; }
 
     /* New-side numbered markers (replace outlines) */
-    .ann-mark { pointer-events: all; cursor: pointer; }
-    .ann-mark circle { fill: #111; stroke: #fff; stroke-width: 1.5px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
+    .ann-mark { pointer-events: all; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .ann-mark.dragging { cursor: grabbing; }
+    .ann-mark.dragging path { stroke: #111; stroke-width: 3px; }
+    .ann-mark path { fill: #111; stroke: #fff; stroke-width: 1.5px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
     .ann-mark text { fill: #fff; font-weight: 700; font-family: system-ui, -apple-system, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-    .ann-mark:hover circle { fill: #333; }
-    .ann-mark.active circle { fill: var(--accent); stroke: #fff; }
+    .ann-mark.moved path, .ann-mark.reviewed path { fill: var(--success); }
+    .ann-mark.needs_look path      { fill: var(--warn); }
+    .ann-mark.content_removed path { fill: var(--removed); }
+    .ann-mark.deleted path         { fill: var(--ink-light); }
+    .ann-mark:hover path { filter: brightness(1.15); }
+    .ann-mark.active path { stroke: #111; stroke-width: 3px; }
     .ann-mark-hidden { visibility: hidden; pointer-events: none; }
 
     /* Old-side overlays: muted ghost style */
@@ -255,6 +261,7 @@
     .ann-body .dc-row span:first-child { color: var(--ink-light); }
     .ann-body .dc-row span:last-child { color: var(--ink); font-weight: 500; text-align: right; }
     .ann-body .dc-note { font-size: 0.67rem; color: var(--ink-light); margin: 7px 0 10px; line-height: 1.4; }
+    .list-hint { font-size: 0.67rem; color: var(--ink-light); line-height: 1.4; margin: -2px 0 8px; }
     .ann-actions { display: flex; flex-direction: column; gap: 6px; }
     .act-btn { width: 100%; padding: 8px 10px; border: none; border-radius: 7px; font-size: 0.78rem; font-weight: 600; color: #fff; cursor: pointer; }
     .act-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -264,7 +271,10 @@
     .act-remove:hover { background: #962e19; }
     .act-btn.secondary { background: transparent; color: var(--ink-mid); border: 1px solid var(--border); }
     .act-btn.secondary:hover { background: var(--bg); }
-    .ann-item.deleted .num-dot { background: var(--ink-light); }
+    .num-dot.moved, .num-dot.reviewed { background: var(--success); }
+    .num-dot.needs_look      { background: var(--warn); }
+    .num-dot.content_removed { background: var(--removed); }
+    .num-dot.deleted         { background: var(--ink-light); }
     .ann-item.deleted .dc-content { text-decoration: line-through; opacity: 0.6; }
     .badge.reviewed { background: var(--success-bg); color: var(--success); }
     .badge.deleted  { background: #ececf1; color: var(--ink-light); }
@@ -395,6 +405,7 @@
 
       <!-- Annotation index list -->
       <div class="detail-header" id="ann-list-header" style="display:none;margin-top:16px;">References</div>
+      <div class="list-hint" id="ann-list-hint" style="display:none;">Drag a numbered pin on the updated page to move it — its point marks the spot it refers to. Moved pins are marked reviewed.</div>
       <div id="ann-list"></div>
 
       <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
@@ -409,6 +420,7 @@
   let activeRect = null;
   let deletedIndices = new Set(); // annotation .index values the user has removed
   let reviewedIndices = new Set(); // annotation .index values marked "Looks Good"
+  const dotOverrides = new Map();  // annotation .index -> [x_frac, y_frac] manual dot positions
 
   const inputAnnotated = document.getElementById('input-annotated');
   const inputNew = document.getElementById('input-new');
@@ -495,6 +507,7 @@
     document.getElementById('progress-screen').style.display = 'none';
     deletedIndices = new Set();
     reviewedIndices = new Set();
+    dotOverrides.clear();
     updateConfirmButton();
     const rs = document.getElementById('results-screen');
     rs.style.top = document.querySelector('header').getBoundingClientRect().height + 'px';
@@ -535,7 +548,7 @@
       return rect;
     }
 
-    function makePageSide(imgSrc, vbW, vbH, aspect, annots, rectClass, coordKey, isTall) {
+    function makePageSide(imgSrc, vbW, vbH, aspect, annots, rectClass, coordKey, isTall, contentFrac = 1) {
       const side = document.createElement('div');
       side.className = 'page-side';
 
@@ -583,21 +596,73 @@
             svg.appendChild(ph); rects.push(ph);
             return;
           }
-          const r = vbW * 0.0135;                 // ~14px radius at typical panel width
-          const cx = ann.dot_x * vbW, cy = ann.dot_y * vbH;
+          const r = vbW * 0.0135;                 // body radius (~14px at typical panel width)
+          const PIN_L = 1.75, OFF = r * PIN_L / Math.SQRT2;   // body sits up-right of the point
           const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-          g.setAttribute('class', 'ann-mark');
-          g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
-          const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-          c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+          g.setAttribute('class', 'ann-mark ' + (ann.status || 'moved'));
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
           const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          t.setAttribute('x', cx); t.setAttribute('y', cy);
           t.setAttribute('font-size', r * (String(ann.number).length > 1 ? 1.05 : 1.3));
           t.textContent = ann.number;
           const tt = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-          tt.textContent = `Reference ${ann.number}`;
-          g.appendChild(tt); g.appendChild(c); g.appendChild(t);
+          tt.textContent = `Reference ${ann.number} — drag to reposition`;
+          g.appendChild(tt); g.appendChild(path); g.appendChild(t);
           svg.appendChild(g); rects.push(g);
+
+          // Teardrop: point at (px,py), round body centred at (cx,cy)
+          const pinD = (cx, cy, px, py) => {
+            const dx = px - cx, dy = py - cy, d = Math.hypot(dx, dy);
+            if (d < r * 1.15) return `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
+            const th = Math.atan2(dy, dx), phi = Math.acos(r / d);
+            const t1 = [cx + r * Math.cos(th + phi), cy + r * Math.sin(th + phi)];
+            const t2 = [cx + r * Math.cos(th - phi), cy + r * Math.sin(th - phi)];
+            return `M ${px} ${py} L ${t1[0]} ${t1[1]} A ${r} ${r} 0 1 1 ${t2[0]} ${t2[1]} Z`;
+          };
+          const maxX = vbW * contentFrac;
+          // Place by the POINT; the body is clamped to stay on the page
+          g._setPos = (px, py) => {
+            const cx = Math.max(r, Math.min(px + OFF, maxX - r));
+            const cy = Math.max(r, Math.min(py - OFF, vbH - r));
+            path.setAttribute('d', pinD(cx, cy, px, py));
+            t.setAttribute('x', cx); t.setAttribute('y', cy);
+            g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
+            g._px = px; g._py = py;
+          };
+          g._orig = { px: ann.dot_x * vbW, py: ann.dot_y * vbH };
+          g._setPos(g._orig.px, g._orig.py);
+
+          // ── Drag the pin; its point is what gets saved ─────────────────
+          let dragging = false, moved = false, sx = 0, sy = 0, p0 = null, start = null;
+          const toSvg = ev => {
+            const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+            return pt.matrixTransform(svg.getScreenCTM().inverse());
+          };
+          g.addEventListener('pointerdown', ev => {
+            if (ev.button !== undefined && ev.button !== 0) return;
+            dragging = true; moved = false; sx = ev.clientX; sy = ev.clientY;
+            p0 = toSvg(ev); start = { x: g._px, y: g._py };
+            try { g.setPointerCapture(ev.pointerId); } catch (e) {}
+            ev.preventDefault();
+          });
+          g.addEventListener('pointermove', ev => {
+            if (!dragging) return;
+            if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+            moved = true; g.classList.add('dragging');
+            const p = toSvg(ev);
+            let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
+            // keep the whole pin on the page (not in the sidebar strip)
+            nx = Math.max(r - OFF, Math.min(nx, maxX - r - OFF));
+            ny = Math.max(r + OFF, Math.min(ny, vbH - r + OFF));
+            g._setPos(nx, ny);
+          });
+          const end = ev => {
+            if (!dragging) return;
+            dragging = false; g.classList.remove('dragging');
+            try { g.releasePointerCapture(ev.pointerId); } catch (e) {}
+            if (moved) onMarkerMoved(ann.index, g._px / vbW, g._py / vbH);
+          };
+          g.addEventListener('pointerup', end);
+          g.addEventListener('pointercancel', end);
           return;
         }
         const x = ann[coordKey + 'x'] !== undefined ? ann[coordKey + 'x'] : ann.x;
@@ -642,7 +707,7 @@
       const newSide = makePageSide(
         `/preview/${currentJobId}/${pg.page_num}`,
         pg.width, pg.height, pg.aspect,
-        pg.annotations, 'ann-rect', '', isTall
+        pg.annotations, 'ann-rect', '', isTall, pg.content_frac || 1
       );
 
       // Register annotations (pair old+new rects together)
@@ -691,6 +756,7 @@
       .sort((a, b) => a.entry.ann.number - b.entry.ann.number);
     if (numbered.length) {
       listHeader.style.display = '';
+      document.getElementById('ann-list-hint').style.display = '';
       numbered.forEach(({ entry, idx }) => listEl.appendChild(buildAnnItem(entry, idx)));
     }
 
@@ -755,12 +821,14 @@
         <div class="dc-note">${esc(a.note)}</div>
         <div class="ann-actions">
           <button type="button" class="act-btn act-good">Looks Good</button>
+          <button type="button" class="act-btn secondary act-reset" hidden>Reset position</button>
           <button type="button" class="act-btn act-remove">Remove</button>
         </div>
       </div>`;
     item.querySelector('.ann-head').addEventListener('click', () => toggleItem(idx));
     item.querySelector('.act-good').addEventListener('click', () => toggleReviewed(idx));
     item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
+    item.querySelector('.act-reset').addEventListener('click', () => resetPosition(idx));
     refreshItem(item, entry);
     return item;
   }
@@ -776,10 +844,18 @@
     badge.className = 'badge ann-status ' + state;
     badge.textContent = label;
     item.classList.toggle('deleted', removed);
+    // Colour the sidebar number dot and the page marker to match the state
+    const STATES = ['moved', 'needs_look', 'content_removed', 'reviewed', 'deleted'];
+    const dot = item.querySelector('.num-dot');
+    STATES.forEach(c => dot.classList.remove(c)); dot.classList.add(state);
+    if (entry.newRectEl && entry.newRectEl.classList.contains('ann-mark')) {
+      STATES.forEach(c => entry.newRectEl.classList.remove(c)); entry.newRectEl.classList.add(state);
+    }
     const good = item.querySelector('.act-good');
     good.style.display = removed ? 'none' : '';
     good.textContent = reviewed ? 'Undo — mark as needs review' : 'Looks Good';
     good.classList.toggle('secondary', reviewed);
+    item.querySelector('.act-reset').hidden = !dotOverrides.has(a.index) || removed;
     const rm = item.querySelector('.act-remove');
     rm.textContent = removed ? 'Restore' : 'Remove';
     rm.classList.toggle('secondary', removed);
@@ -840,6 +916,35 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
+  // ── Manual dot placement ──────────────────────────────────────────────────
+  function registryIdxByAnn(annIndex) {
+    return (window._annRegistry || []).findIndex(e => e.ann.index === annIndex);
+  }
+
+  function onMarkerMoved(annIndex, xf, yf) {
+    const idx = registryIdxByAnn(annIndex);
+    const entry = (window._annRegistry || [])[idx];
+    if (!entry) return;
+    dotOverrides.set(annIndex, [xf, yf]);
+    // Placing a dot by hand is a human confirmation: mark it reviewed
+    if (!reviewedIndices.has(annIndex)) { reviewedIndices.add(annIndex); entry.autoReviewed = true; }
+    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+    if (item) refreshItem(item, entry);
+    updateConfirmButton();
+  }
+
+  function resetPosition(idx) {
+    const entry = (window._annRegistry || [])[idx];
+    if (!entry) return;
+    const g = entry.newRectEl;
+    if (g && g._setPos) g._setPos(g._orig.px, g._orig.py);
+    dotOverrides.delete(entry.ann.index);
+    if (entry.autoReviewed) { reviewedIndices.delete(entry.ann.index); entry.autoReviewed = false; }
+    const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+    if (item) refreshItem(item, entry);
+    updateConfirmButton();
+  }
+
   // ── Review / delete / restore annotations ─────────────────────────────────
   function toggleReviewed(idx) {
     const entry = (window._annRegistry || [])[idx];
@@ -874,13 +979,17 @@
     const btn = document.getElementById('confirm-btn');
     const label = document.getElementById('confirm-btn-label');
     const hint = document.getElementById('confirm-hint');
-    const n = deletedIndices.size;
-    if (n === 0) {
+    const nDel = deletedIndices.size;
+    const nMoved = [...dotOverrides.keys()].filter(k => !deletedIndices.has(k)).length;
+    if (nDel === 0 && nMoved === 0) {
       label.textContent = 'Download Remapped PDF';
       hint.textContent = '';
     } else {
       label.textContent = 'Confirm & Download';
-      hint.textContent = `${n} annotation${n === 1 ? '' : 's'} will be removed`;
+      const parts = [];
+      if (nDel) parts.push(`${nDel} removed`);
+      if (nMoved) parts.push(`${nMoved} repositioned`);
+      hint.textContent = parts.join(' · ');
     }
   }
 
@@ -891,11 +1000,11 @@
     document.getElementById('confirm-btn-label').textContent = 'Saving…';
 
     try {
-      if (deletedIndices.size > 0) {
+      if (deletedIndices.size > 0 || dotOverrides.size > 0) {
         const res = await fetch(`/confirm/${currentJobId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deleted_indices: [...deletedIndices] })
+          body: JSON.stringify({ deleted_indices: [...deletedIndices], positions: Object.fromEntries(dotOverrides) })
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
@@ -940,6 +1049,7 @@
     activeRect = null; activeOldRect = null; activeNewRect = null;
     deletedIndices = new Set();
     reviewedIndices = new Set();
+    dotOverrides.clear();
     document.getElementById('ann-list').innerHTML = '';
     document.getElementById('ann-list-header').style.display = 'none';
     document.getElementById('confirm-btn-label').textContent = 'Download Remapped PDF';
