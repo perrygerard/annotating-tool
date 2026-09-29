@@ -813,6 +813,8 @@
     btn.disabled = true;
     document.getElementById('confirm-btn-label').textContent = 'Saving…';
 
+    console.log('[remapper] confirmAndDownload', {jobId: currentJobId, deletedCount: deletedIndices.size, deleted: [...deletedIndices]});
+
     try {
       if (deletedIndices.size > 0) {
         const res = await fetch(`/confirm/${currentJobId}`, {

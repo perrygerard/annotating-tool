@@ -123,8 +123,10 @@ def confirm(job_id):
     The indices match the `index` field on each annotation object.
     """
     job = jobs.get(job_id)
-    if not job or job["status"] != "done":
-        return jsonify({"error": "Job not ready"}), 404
+    if not job:
+        return jsonify({"error": f"Job not found (id={job_id}, known_jobs={list(jobs.keys())})"}), 404
+    if job["status"] != "done":
+        return jsonify({"error": f"Job not ready (status={job['status']})"}), 404
 
     data = request.get_json(silent=True) or {}
     deleted = set(data.get("deleted_indices", []))
@@ -134,7 +136,7 @@ def confirm(job_id):
     output_path = job.get("output_path")
 
     if not all_annots or not new_pdf_path or not output_path:
-        return jsonify({"error": "Job data missing — please re-process"}), 500
+        return jsonify({"error": f"Job data missing — all_annots={bool(all_annots)}, new_pdf_path={new_pdf_path}, output_path={output_path}"}), 500
 
     if not os.path.exists(new_pdf_path):
         return jsonify({"error": "Source PDF no longer available — please re-process"}), 500
