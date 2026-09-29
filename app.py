@@ -106,8 +106,10 @@ def download(job_id):
     if not job or job["status"] != "done":
         return jsonify({"error": "File not ready"}), 404
     output_path = job.get("output_path")
-    if not output_path or not os.path.exists(output_path):
-        return jsonify({"error": "File not found"}), 404
+    if not output_path:
+        return jsonify({"error": "Output file was not created — check processing logs"}), 404
+    if not os.path.exists(output_path):
+        return jsonify({"error": "Output file is no longer on disk (server may have restarted) — please re-process"}), 404
     return send_file(output_path, as_attachment=True,
                      download_name="remapped_annotations.pdf",
                      mimetype="application/pdf")
