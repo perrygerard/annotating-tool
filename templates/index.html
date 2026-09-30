@@ -43,10 +43,10 @@
     /* ── Upload screen ── */
     #upload-screen { flex: 1; overflow-y: auto; width: 100%; padding: 56px 24px 72px; }
     .upload-inner { max-width: 760px; margin: 0 auto; }
-    .intro { margin-bottom: 30px; }
+    .intro-text { font-size: 0.95rem; color: var(--ink-mid); line-height: 1.55; max-width: 60ch; margin: 0 auto; text-align: center; }
     .intro h2 { font-family: var(--display); font-size: clamp(1.8rem, 4.4vw, 2.7rem); font-weight: 700; line-height: 1.04; letter-spacing: -0.035em; margin-bottom: 14px; text-wrap: balance; }
     .intro p { font-size: 1rem; color: var(--ink-mid); line-height: 1.55; max-width: 56ch; }
-    .steps { display: flex; gap: 22px; margin-top: 20px; flex-wrap: wrap; }
+    .steps { display: flex; gap: 22px; margin: 0 0 22px; flex-wrap: wrap; justify-content: center; }
     .step { display: flex; align-items: baseline; gap: 8px; font-size: 0.84rem; color: var(--ink-mid); }
     .step-num { font-family: var(--mono); font-size: 0.72rem; font-weight: 700; color: var(--ink); background: var(--bench); border-radius: 5px; padding: 1px 6px; }
     .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 22px; margin-bottom: 20px; }
@@ -237,7 +237,7 @@
     html[data-theme="tailwind"] header p { color: #64748b; }
     html[data-theme="tailwind"] #upload-screen { background-image: radial-gradient(60% 320px at 50% 0%, #e0f2fe 0%, rgb(224 242 254 / 0) 100%); }
     html[data-theme="tailwind"] .intro h2 { font-weight: 800; letter-spacing: -0.045em; line-height: 1.05; color: #0f172a; }
-    html[data-theme="tailwind"] .intro p { color: #475569; }
+    html[data-theme="tailwind"] .intro-text { color: #475569; }
     html[data-theme="tailwind"] .step { color: #475569; }
     html[data-theme="tailwind"] .step-num, html[data-theme="tailwind"] .loc-chip { background: #f0f9ff; color: #0369a1; box-shadow: inset 0 0 0 1px rgb(14 165 233 / .25); font-weight: 600; }
     html[data-theme="tailwind"] .card, html[data-theme="tailwind"] .progress-card { border: none; border-radius: 16px; box-shadow: var(--shadow); }
@@ -329,14 +329,10 @@
 <!-- ── Upload screen ── -->
 <div id="upload-screen">
 <div class="upload-inner">
-  <div class="intro">
-    <h2>Put every review comment back on the right spot.</h2>
-    <p id="intro-text">Upload the annotated PDF and its updated version. Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.</p>
-    <div class="steps">
+  <div class="steps">
       <div class="step"><span class="step-num">1</span> Upload both files</div>
       <div class="step"><span class="step-num">2</span> Check the pins</div>
       <div class="step"><span class="step-num">3</span> Download</div>
-    </div>
   </div>
 
   <div class="card" id="upload-card">
@@ -378,6 +374,7 @@
     <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Remap annotations</button>
     <div class="template-link">Not sure how to lay out the list? <a href="/template.docx">Download the Word template</a></div>
   </div>
+  <p class="intro-text" id="intro-text">Upload the annotated PDF and its updated version. Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.</p>
 </div>
 </div>
 
