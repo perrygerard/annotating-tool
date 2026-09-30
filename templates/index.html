@@ -109,15 +109,15 @@
     /* Pins on the updated page */
     .ann-mark { pointer-events: all; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
     .ann-mark.dragging { cursor: grabbing; }
-    /* Pins: soft tinted fill, bold saturated outline, black number */
-    .ann-mark { --pin-fill: #dcf79a; --pin-line: #65a30d; }
-    .ann-mark.needs_look      { --pin-fill: #fed7aa; --pin-line: #ea580c; }
-    .ann-mark.content_removed { --pin-fill: #e4d4fb; --pin-line: #6d28d9; }
-    .ann-mark.deleted         { --pin-fill: #e2e8f0; --pin-line: #64748b; }
-    .ann-mark path { fill: var(--pin-fill); stroke: var(--pin-line); stroke-width: 1px; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
-    .ann-mark text { fill: #0f172a; font-weight: 700; font-family: var(--body); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-    .ann-mark:hover path { filter: brightness(0.97) saturate(1.1); }
-    .ann-mark.active path, .ann-mark.dragging path { stroke-width: 2px; filter: drop-shadow(0 0 3px rgb(14 165 233 / .9)); }
+    /* Pins share the status-chip palette: chip fill, chip outline, chip text colour */
+    .ann-mark { --pin-fill: var(--success-bg); --pin-line: var(--success-border); --pin-ink: var(--success); }
+    .ann-mark.needs_look      { --pin-fill: var(--warn-bg);    --pin-line: var(--warn-border);    --pin-ink: var(--warn); }
+    .ann-mark.content_removed { --pin-fill: var(--removed-bg); --pin-line: var(--removed-border); --pin-ink: var(--removed); }
+    .ann-mark.deleted         { --pin-fill: #f1f5f9; --pin-line: #cbd5e1; --pin-ink: var(--ink-light); }
+    .ann-mark path { fill: var(--pin-fill); stroke: var(--pin-line); stroke-width: 1px; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: fill 0.12s; filter: drop-shadow(0 1px 1.5px rgb(15 23 42 / .4)); }
+    .ann-mark text { fill: var(--pin-ink); font-weight: 700; font-family: var(--body); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .ann-mark:hover path { filter: brightness(0.97) drop-shadow(0 1px 1.5px rgb(15 23 42 / .4)); }
+    .ann-mark.active path, .ann-mark.dragging path { stroke: var(--pin-ink); stroke-width: 1.5px; filter: drop-shadow(0 0 3px rgb(14 165 233 / .9)); }
     .ann-mark-hidden { visibility: hidden; pointer-events: none; }
 
     /* Where the reviewer's box sat on the original: ghosted */
@@ -700,7 +700,7 @@
             svg.appendChild(ph); rects.push(ph);
             return;
           }
-          const r0 = vbW * 0.00675;               // body radius (~14px at typical panel width)
+          const r0 = vbW * 0.00945;               // body radius (~14px at typical panel width)
           const PIN_L = 1.75;
           let r = r0, OFF = r * PIN_L / Math.SQRT2;   // body sits up-right of the point; both shrink as the page is zoomed
           const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
