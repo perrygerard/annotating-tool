@@ -197,8 +197,9 @@ def download(job_id):
         return jsonify({"error": "Output file was not created — check processing logs"}), 404
     if not os.path.exists(output_path):
         return jsonify({"error": "Output file is no longer on disk (server may have restarted) — please re-process"}), 404
+    is_add = (job.get("results") or {}).get("mode") == "add"
     return send_file(output_path, as_attachment=True,
-                     download_name="remapped_annotations.pdf",
+                     download_name="annotated.pdf" if is_add else "remapped_annotations.pdf",
                      mimetype="application/pdf")
 
 
@@ -253,7 +254,9 @@ def confirm(job_id):
         results["total"] = len(results["annotations"])
         return jsonify({"status": "ok"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback.print_exc()                  # shows up in the server log
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
 MAX_PREVIEW_PIXELS = 36_000_000    # keeps one render's memory bounded on very tall pages

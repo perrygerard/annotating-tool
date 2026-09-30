@@ -110,8 +110,20 @@ def _norm(t):
     return re.sub(r"[^a-z0-9 ]", "", t.lower())
 
 
+def _page_text_words(page):
+    """Words on the page that are really part of the layout, i.e. not text drawn inside an
+    annotation (callouts carry their own text, which would otherwise look like a text layer)."""
+    boxes = [fitz.Rect(a.rect) for a in page.annots()]
+    out = []
+    for w in page.get_text("words"):
+        r = fitz.Rect(w[:4])
+        if not any(r.intersects(b) for b in boxes):
+            out.append(w)
+    return out
+
+
 def _has_text_layer(page):
-    return len(page.get_text("words")) >= MIN_TEXT_WORDS
+    return len(_page_text_words(page)) >= MIN_TEXT_WORDS
 
 
 def _ocr_words(page):
@@ -148,7 +160,7 @@ def load_pages(pdf_path, page_filter=None, progress=None):
     for k, i in enumerate(todo):
         page = doc[i]
         if _has_text_layer(page):
-            ws = [(w[4], w[0], w[1], w[2], w[3], (w[5], w[6], w[7])) for w in page.get_text("words")]
+            ws = [(w[4], w[0], w[1], w[2], w[3], (w[5], w[6], w[7])) for w in _page_text_words(page)]
             ws.sort(key=lambda w: w[5])
             pages[i] = {"words": ws, "ocr": False}
         else:
@@ -197,8 +209,11 @@ def find_superscripts(pdf_path, pages):
 
 def _sups_from_text_layer(page, pi):
     out = []
+    boxes = [fitz.Rect(a.rect) for a in page.annots()]
     for b in page.get_text("dict")["blocks"]:
         for ln in b.get("lines", []):
+            if any(fitz.Rect(ln["bbox"]).intersects(bx) for bx in boxes):
+                continue                       # text drawn inside an annotation, not layout copy
             spans = [s for s in ln["spans"] if s["text"].strip()]
             if len(spans) < 2:
                 continue

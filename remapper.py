@@ -1567,7 +1567,13 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
         new_mediabox = fitz.Rect(0, 0, pw + SIDEBAR_W, ph)
         if draw_dots:                      # the review preview (draw_dots=False) stays sidebar-free
             page.set_mediabox(new_mediabox)
-            page.set_cropbox(new_mediabox)
+            # Use the mediabox as stored: PDFs round page sizes on write, so passing new_mediabox
+            # back in can land a hair outside it ("CropBox not in MediaBox") on fractional sizes.
+            try:
+                page.set_cropbox(page.mediabox)
+            except ValueError:
+                page.set_cropbox(fitz.Rect(page.mediabox.x0 + 0.01, page.mediabox.y0 + 0.01,
+                                           page.mediabox.x1 - 0.01, page.mediabox.y1 - 0.01))
 
 
         # ── Draw sidebar background ──────────────────────────────────────────
