@@ -125,10 +125,13 @@
     .ann-mark.needs_look      { --pin-fill: var(--warn-bg);    --pin-line: var(--warn-border);    --pin-ink: var(--warn); }
     .ann-mark.content_removed { --pin-fill: var(--removed-bg); --pin-line: var(--removed-border); --pin-ink: var(--removed); }
     .ann-mark.deleted         { --pin-fill: #f1f5f9; --pin-line: #cbd5e1; --pin-ink: var(--ink-light); }
-    .ann-mark path { fill: var(--pin-fill); stroke: var(--pin-line); stroke-width: 1px; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: fill 0.12s; filter: drop-shadow(0 1px 1.5px rgb(15 23 42 / .4)); }
+    .ann-mark .pin-body { fill: var(--pin-fill); stroke: var(--pin-ink); stroke-width: 2px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
+    .ann-mark .pin-stem { stroke: var(--pin-ink); stroke-width: 2px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+    .ann-mark .pin-dot { fill: var(--pin-ink); }
+    .ann-mark { filter: drop-shadow(0 1px 1.5px rgb(15 23 42 / .35)); }
     .ann-mark text { fill: var(--pin-ink); font-weight: 700; font-family: var(--body); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-    .ann-mark:hover path { filter: brightness(0.97) drop-shadow(0 1px 1.5px rgb(15 23 42 / .4)); }
-    .ann-mark.active path, .ann-mark.dragging path { stroke: var(--pin-ink); stroke-width: 1.5px; filter: drop-shadow(0 0 3px rgb(14 165 233 / .9)); }
+    .ann-mark:hover .pin-body { filter: brightness(0.97); }
+    .ann-mark.active, .ann-mark.dragging { filter: drop-shadow(0 0 3px rgb(14 165 233 / .9)); }
     .ann-mark-hidden { visibility: hidden; pointer-events: none; }
 
 
@@ -454,7 +457,7 @@
   let deletedIndices = new Set(); // annotation .index values the user has removed
   let reviewedIndices = new Set(); // annotation .index values marked "Looks Good"
   const dotOverrides = new Map();  // annotation .index -> [x_frac, y_frac] manual pin-point positions
-  const sideOverrides = new Map(); // annotation .index -> +1|-1 manual body side (only when it differs from the default)
+  const sideOverrides = new Map(); // annotation .index -> quarter turns 0..3 (0 ring right, 1 below, 2 left, 3 above), only when it differs from the default
   const boxEdits = new Map();      // box .index -> [x, y, w, h] fractions of the output page (boxes the user moved / resized)
   const contentEdits = new Map();  // annotation .index -> edited reference text
   let drawMode = false, newBoxSeq = 0;
@@ -728,55 +731,48 @@
       return rect;
     }
 
+    // A pin: a number in a ring on a short stem that ends in a dot. The dot is the point it refers to;
+    // the ring can sit right / below / left / above it (quarter turns), so it never has to cover the target.
+    const PIN_DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
     function buildPin(svg, ann, vbW, vbH, contentFrac) {
-      const r0 = vbW * 0.00945;               // body radius (~14px at typical panel width)
-      const PIN_L = 1.75;
-      let r = r0, OFF = r * PIN_L / Math.SQRT2;   // body sits up-right of the point; both shrink as the page is zoomed
+      const r0 = vbW * 0.00945;               // ring radius (~14px at typical panel width)
+      const PIN_L = 2.0, TIP_R = 0.26;
+      let r = r0;                             // shrinks as the page is zoomed so pins keep their on-screen size
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.setAttribute('class', 'ann-mark ' + (ann.status || 'moved'));
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      const mk = (tag, cls) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); if (cls) e.setAttribute('class', cls); return e; };
+      const stem = mk('line', 'pin-stem'), body = mk('circle', 'pin-body'), dot = mk('circle', 'pin-dot');
+      const t = mk('text');
       let lbl = String(ann.number) + (ann.sub_label || '');
-      t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
+      const fs = () => r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8);
+      t.setAttribute('font-size', fs());
       t.textContent = lbl;
-      const tt = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-      tt.textContent = `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag to reposition`;
+      const tt = mk('title');
+      const title = () => `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag to move, double-click or R to turn`;
+      tt.textContent = title();
       g._setLabel = () => {
         lbl = String(ann.number) + (ann.sub_label || '');
-        t.textContent = lbl;
-        t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
-        tt.textContent = `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag to reposition`;
+        t.textContent = lbl; t.setAttribute('font-size', fs()); tt.textContent = title();
       };
-      g.appendChild(tt); g.appendChild(path); g.appendChild(t);
+      [tt, stem, dot, body, t].forEach(e => g.appendChild(e));
       svg.appendChild(g);
 
-      // Teardrop: point at (px,py), round body centred at (cx,cy)
-      const pinD = (cx, cy, px, py) => {
-        const dx = px - cx, dy = py - cy, d = Math.hypot(dx, dy);
-        if (d < r * 1.15) return `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
-        const th = Math.atan2(dy, dx), phi = Math.acos(r / d);
-        const t1 = [cx + r * Math.cos(th + phi), cy + r * Math.sin(th + phi)];
-        const t2 = [cx + r * Math.cos(th - phi), cy + r * Math.sin(th - phi)];
-        return `M ${px} ${py} L ${t1[0]} ${t1[1]} A ${r} ${r} 0 1 1 ${t2[0]} ${t2[1]} Z`;
-      };
       const maxX = vbW * contentFrac;
-      g._side = ann.pin_side || 1; g._defSide = g._side;   // +1 body right of the point, -1 left
-      // Place by the POINT; the body is clamped to stay on the page
+      g._dir = ((ann.pin_dir | 0) % 4 + 4) % 4; g._defDir = g._dir;    // quarter turns: 0 ring to the right, 1 below, 2 left, 3 above
+      // Place by the POINT; the ring is clamped to stay on the page
       g._setPos = (px, py) => {
-        const cx = Math.max(r, Math.min(px + g._side * OFF, maxX - r));
-        const cy = Math.max(r, Math.min(py - OFF, vbH - r));
-        path.setAttribute('d', pinD(cx, cy, px, py));
+        const v = PIN_DIRS[g._dir];
+        const cx = Math.max(r, Math.min(px + v[0] * r * PIN_L, maxX - r));
+        const cy = Math.max(r, Math.min(py + v[1] * r * PIN_L, vbH - r));
+        stem.setAttribute('x1', px); stem.setAttribute('y1', py); stem.setAttribute('x2', cx); stem.setAttribute('y2', cy);
+        dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.setAttribute('r', r * TIP_R);
+        body.setAttribute('cx', cx); body.setAttribute('cy', cy); body.setAttribute('r', r);
         t.setAttribute('x', cx); t.setAttribute('y', cy);
         g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
         g._px = px; g._py = py;
       };
-      g._setSide = s => { g._side = s; g._setPos(g._px, g._py); };
-      // Keep pins the same size on screen while the page is zoomed: only the body shrinks, the point stays put
-      g._setZoom = z => {
-        r = r0 / z; OFF = r * PIN_L / Math.SQRT2;
-        t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
-        g._setPos(g._px, g._py);
-      };
+      g._setDir = d => { g._dir = ((d % 4) + 4) % 4; g._setPos(g._px, g._py); };
+      g._setZoom = z => { r = r0 / z; t.setAttribute('font-size', fs()); g._setPos(g._px, g._py); };
       g._orig = { px: ann.dot_x * vbW, py: ann.dot_y * vbH };
       g._setPos(g._orig.px, g._orig.py);
 
@@ -799,9 +795,7 @@
         moved = true; g.classList.add('dragging');
         const p = toSvg(ev);
         let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
-        // keep the whole pin on the page (not in the sidebar strip)
-        nx = Math.max(r - g._side * OFF, Math.min(nx, maxX - r - g._side * OFF));
-        ny = Math.max(r + OFF, Math.min(ny, vbH - r + OFF));
+        nx = Math.max(0, Math.min(nx, maxX)); ny = Math.max(0, Math.min(ny, vbH));      // the point stays on the page
         g._setPos(nx, ny);
       });
       const end = ev => {
@@ -812,6 +806,7 @@
       };
       g.addEventListener('pointerup', end);
       g.addEventListener('pointercancel', end);
+      g.addEventListener('dblclick', ev => { ev.preventDefault(); const i = registryIdxByAnn(ann.index); if (i >= 0) onMarkerFlipped(i, ev.shiftKey ? -1 : 1); });
       return g;
     }
 
@@ -1173,7 +1168,7 @@
           <div class="dc-note">${esc(m.e.ann.note)}</div>
           <div class="loc-actions">
             <button type="button" class="act-btn secondary loc-show">Show</button>
-            <button type="button" class="act-btn secondary loc-flip">⇄ Flip pin</button>
+            <button type="button" class="act-btn secondary loc-flip" title="Turn the pin a quarter (R)">↻ Turn pin</button>
             <button type="button" class="act-btn secondary loc-reset" hidden>Reset pin</button>
           </div>
         </div>`).join('');
@@ -1193,7 +1188,7 @@
         <div class="dc-note">${esc(a.note)}</div>
         ${locRows}
         <div class="ann-actions">
-          <button type="button" class="act-btn secondary act-flip">⇄ Flip pin side</button>
+          <button type="button" class="act-btn secondary act-flip" title="Turn the pin a quarter (R, Shift+R the other way)">↻ Turn pin</button>
           <button type="button" class="act-btn secondary act-reset" hidden>Reset pin</button>
           <button type="button" class="act-btn act-remove">Remove</button>
         </div>
@@ -1255,7 +1250,7 @@
     item.querySelector('.act-reset').hidden = !(dotOverrides.has(a.index) || sideOverrides.has(a.index)) || removed;
     item.querySelector('.act-flip').style.display = removed ? 'none' : '';
     const pinsN = group.filter(m => m.e.ann.type !== 'Square').length, hasBox = group.some(m => m.e.ann.type === 'Square');
-    item.querySelector('.act-flip').textContent = pinsN > 1 ? `⇄ Flip pin ${a.number}` : '⇄ Flip pin side';
+    item.querySelector('.act-flip').textContent = pinsN > 1 ? `↻ Turn pin ${a.number}` : '↻ Turn pin';
     const rm = item.querySelector('.act-remove');
     rm.textContent = removed ? 'Restore' : (pinsN > 1 ? 'Remove both' : hasBox ? 'Remove pin & box' : 'Remove');
     rm.classList.toggle('secondary', removed);
@@ -1426,7 +1421,7 @@
     const boxAnn = { ...base, index: boxIdx, type: 'Square', content: '', number: null, parent_index: pinIdx,
                      x: fx, y: fy, w: fw, h: fh, num_x: null, num_y: null, dot_x: null, dot_y: null };
     const pinAnn = { ...base, index: pinIdx, type: 'FreeText', content: '', number: 99999, parent_index: null,
-                     x: fx + fw, y: fy, w: 0.004, h: 0.004, num_x: fx + fw, num_y: fy, dot_x: fx + fw, dot_y: fy, pin_side: 1 };
+                     x: fx + fw, y: fy, w: 0.004, h: 0.004, num_x: fx + fw, num_y: fy, dot_x: fx + fw, dot_y: fy, pin_dir: 0 };
     const boxEl = B.buildBox(pg._newSvg, boxAnn, vbW, vbH, cf);
     const pinEl = B.buildPin(pg._newSvg, pinAnn, vbW, vbH, cf);
     pinEl._setZoom(zoomLevel());
@@ -1487,22 +1482,37 @@
     updateConfirmButton();
   }
 
-  function onMarkerFlipped(idx) {
+  // Turn a pin a quarter at a time (step +1 clockwise, -1 back): the ring moves round the point
+  function onMarkerFlipped(idx, step = 1) {
     const entry = (window._annRegistry || [])[idx];
-    if (!entry || !entry.newRectEl || !entry.newRectEl._setSide) return;
+    if (!entry || !entry.newRectEl || !entry.newRectEl._setDir) return;
     const g = entry.newRectEl, k = entry.ann.index;
-    g._setSide(-g._side);
-    if (g._side === g._defSide) sideOverrides.delete(k); else sideOverrides.set(k, g._side);
+    g._setDir(g._dir + step);
+    if (g._dir === g._defDir) sideOverrides.delete(k); else sideOverrides.set(k, g._dir);
     if (sideOverrides.has(k) && !reviewedIndices.has(k)) { reviewedIndices.add(k); entry.autoReviewed = true; }
     refreshGroup(idx);
     updateConfirmButton();
   }
+  // R turns the selected pin (Shift+R the other way)
+  document.addEventListener('keydown', ev => {
+    if ((ev.key !== 'r' && ev.key !== 'R') || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    const tag = (ev.target && ev.target.tagName) || '';
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (ev.target && ev.target.isContentEditable)) return;
+    const reg = window._annRegistry || [];
+    const i = activeEntry ? reg.indexOf(activeEntry) : -1;
+    if (i < 0) return;
+    // the selected reference: turn its first pin (or the pin that was clicked)
+    const pin = reg[i].newRectEl && reg[i].newRectEl._setDir ? i : groupOf(i).map(m => m.i).find(j => reg[j].newRectEl && reg[j].newRectEl._setDir);
+    if (pin === undefined || pin < 0) return;
+    ev.preventDefault();
+    onMarkerFlipped(pin, ev.shiftKey ? -1 : 1);
+  });
 
   function resetPosition(idx) {
     const entry = (window._annRegistry || [])[idx];
     if (!entry) return;
     const g = entry.newRectEl;
-    if (g && g._setPos) { g._setSide(g._defSide); g._setPos(g._orig.px, g._orig.py); }
+    if (g && g._setPos) { g._setDir(g._defDir); g._setPos(g._orig.px, g._orig.py); }
     dotOverrides.delete(entry.ann.index);
     sideOverrides.delete(entry.ann.index);
     if (entry.autoReviewed) { reviewedIndices.delete(entry.ann.index); entry.autoReviewed = false; }

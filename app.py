@@ -297,7 +297,7 @@ def confirm(job_id):
     sides = {}
     for k, v in (data.get("sides") or {}).items():
         try:
-            sides[int(k)] = 1 if int(v) >= 0 else -1
+            sides[int(k)] = int(v) % 4          # quarter turns: 0 right, 1 below, 2 left, 3 above
         except (ValueError, TypeError):
             continue
     overrides = {}

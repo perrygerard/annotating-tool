@@ -1305,10 +1305,10 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path):
                 "h": (new_r.y1 - new_r.y0) / ph,
             }
             dot_xy = None
-            pin_side = 1
+            pin_dir = 0
             if num_by_index.get(info.index) is not None:
-                pin_side = auto_pg.get(info.index, _pin_side(info))
-                ddx, ddy = _dot_position(info, pw, ph, dot_r_pg, S_pg, pin_side)
+                pin_dir = auto_pg.get(info.index, _pin_dir(info))
+                ddx, ddy = _dot_position(info, pw, ph, dot_r_pg, S_pg, pin_dir)
                 dot_xy = (ddx / tot_w, ddy / ph)
             # Normalised coords for old (left) side
             old_coords = {
@@ -1344,7 +1344,7 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path):
                 "num_y": _anchor_point(info)[1] / ph,
                 "dot_x": dot_xy[0] if dot_xy else None,
                 "dot_y": dot_xy[1] if dot_xy else None,
-                "pin_side": pin_side,
+                "pin_dir": pin_dir,
                 "parent_index": info.parent_index,
                 "sub_label": info.sub_label,
             })
@@ -1405,7 +1405,10 @@ def _scale(pw):
 
 
 PIN_SCALE = 0.5   # page pins are half the size of the sidebar number dots
-PIN_L = 1.75   # pin length: distance from body centre to the point, in body radii
+PIN_L = 2.0       # distance from the point to the body centre, in body radii (the stem is what shows of it)
+TIP_R = 0.26      # radius of the dot on the point, in body radii
+# Where the body sits relative to the point, in quarter turns: 0 = right (stem points left), 1 = below, 2 = left, 3 = above
+PIN_DIRS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
 
 
 def _pin_side(info):
@@ -1419,19 +1422,23 @@ def _pin_side(info):
     return 1 if (r.x0 + r.x1) / 2 >= tip[0] else -1
 
 
+def _pin_dir(info):
+    return 0 if _pin_side(info) >= 0 else 2
+
+
 def _auto_sides(infos, pw, r, S):
-    """Default pin side per annotation, flipped when the body would land on a
+    """Default pin direction per annotation (0..3), turned away when the body would land on a
     neighbouring pin (targets that sit close together)."""
     placed, out = [], {}
     order = sorted(infos, key=lambda i: (_anchor_point(i)[1], _anchor_point(i)[0]))
     for info in order:
-        pref = _pin_side(info)
+        pref = _pin_dir(info)
         pick = None
-        for side in (pref, -pref):
-            px, py = _dot_position(info, pw, 0, r, S, side)
-            c = _pin_body_center(px, py, r, side)
+        for d in (pref, (pref + 2) % 4, (pref + 1) % 4, (pref + 3) % 4):
+            px, py = _dot_position(info, pw, 0, r, S, d)
+            c = _pin_body_center(px, py, r, d)
             if all(math.hypot(c[0] - o[0], c[1] - o[1]) >= 2.05 * r for o in placed):
-                pick = (side, c); break
+                pick = (d, c); break
         if pick is None:
             px, py = _dot_position(info, pw, 0, r, S, pref)
             pick = (pref, _pin_body_center(px, py, r, pref))
@@ -1439,47 +1446,42 @@ def _auto_sides(infos, pw, r, S):
     return out
 
 
-def _dot_position(info, pw, ph, dot_r, S, side=None):
+def _dot_position(info, pw, ph, dot_r, S, d=None):
     """Where the pin's POINT goes: the referenced spot, nudged 2*S toward the body
     so the point stops just short of the superscript instead of on it."""
-    if side is None:
-        side = _pin_side(info)
+    if d is None:
+        d = _pin_dir(info)
     x, y = _anchor_point(info)
-    g = 2 * S / math.sqrt(2)
-    return x + side * g, y - g
+    v = PIN_DIRS[d % 4]
+    return x + v[0] * 2 * S, y + v[1] * 2 * S
 
 
-def _pin_body_center(px, py, r, side=1):
-    """Body centre for a pin whose point is (px, py): up, and to `side`."""
-    off = r * PIN_L / math.sqrt(2)
-    return px + side * off, py - off
+def _pin_body_center(px, py, r, d=0):
+    """Body centre for a pin whose point is (px, py), turned `d` quarter turns."""
+    v = PIN_DIRS[d % 4]
+    return px + v[0] * r * PIN_L, py + v[1] * r * PIN_L
 
 
-def _pin_polygon(cx, cy, px, py, r, steps=48):
-    """Teardrop outline: point (px,py) + tangent lines + arc around the far side."""
-    dx, dy = px - cx, py - cy
-    d = math.hypot(dx, dy)
-    if d < r * 1.15:                      # point is inside/at the body: plain circle
-        return [(cx + r * math.cos(2 * math.pi * i / steps),
-                 cy + r * math.sin(2 * math.pi * i / steps)) for i in range(steps)]
-    th = math.atan2(dy, dx)
-    phi = math.acos(r / d)
-    a0, a1 = th + phi, th + 2 * math.pi - phi
-    pts = [(cx + r * math.cos(a0 + (a1 - a0) * i / steps),
-            cy + r * math.sin(a0 + (a1 - a0) * i / steps)) for i in range(steps + 1)]
-    pts.append((px, py))
-    return pts
+def _pin_bbox(cx, cy, px, py, r):
+    """Box around the whole pin (body, stem and point dot), padded for the stroke."""
+    rd = r * TIP_R
+    pad = 2 + r * 0.1
+    return fitz.Rect(min(cx - r, px - rd) - pad, min(cy - r, py - rd) - pad,
+                     max(cx + r, px + rd) + pad, max(cy + r, py + rd) + pad)
 
 
 def _draw_pin(page, cx, cy, px, py, number, radius):
-    """Black teardrop pin with white number; point at (px,py), body centred (cx,cy)."""
-    page.draw_polyline([fitz.Point(x, y) for x, y in _pin_polygon(cx, cy, px, py, radius)],
-                       color=None, fill=(0, 0, 0), closePath=True)
+    """Number in a ring on a short stem ending in a dot; the dot is the point, the ring sits at (cx,cy)."""
+    ink = (0.06, 0.06, 0.06)
+    sw = max(0.6, radius * 0.17)
+    page.draw_line(fitz.Point(px, py), fitz.Point(cx, cy), color=ink, width=sw)
+    page.draw_circle(fitz.Point(cx, cy), radius, color=ink, fill=(1, 1, 1), width=max(0.7, radius * 0.15))
+    page.draw_circle(fitz.Point(px, py), radius * TIP_R, color=None, fill=ink)
     label = str(number)
     fontsize = radius * {1: 1.1, 2: 0.85}.get(len(label), 0.65)
-    tw = fitz.get_text_length(label, fontname="helv", fontsize=fontsize)
+    tw = fitz.get_text_length(label, fontname="hebo", fontsize=fontsize)
     page.insert_text(fitz.Point(cx - tw / 2, cy + fontsize * 0.35), label,
-                     fontname="helv", fontsize=fontsize, color=(1, 1, 1))
+                     fontname="hebo", fontsize=fontsize, color=ink)
 
 
 def _out_page(info):
@@ -1593,9 +1595,7 @@ def _make_carrier(page, box, tip, content, author, line_to=None):
 def _add_carrier(page, info, cx, cy, px, py, r, pins_on_page, global_num, out_page):
     """Write a hidden, real annotation for a pin so a Carryover export can be fed back in as the
     'annotated' PDF of the next round."""
-    pts = _pin_polygon(cx, cy, px, py, r)
-    box = fitz.Rect(min(x for x, _ in pts) - 1, min(y for _, y in pts) - 1,
-                    max(x for x, _ in pts) + 1, max(y for _, y in pts) + 1)
+    box = _pin_bbox(cx, cy, px, py, r)
     key = (id(page.parent), info.index)
     if info.parent_index is None:
         _make_carrier(page, box, (px, py), info.content, info.author)
@@ -1635,7 +1635,7 @@ def strip_pin_text(doc):
             if a.info.get("subject") == CARRIER_SUBJECT:
                 page.delete_annot(a)
         for _, box, *_r in found:
-            page.add_redact_annot(box)
+            page.add_redact_annot(fitz.Rect(box.x0 - 6, box.y0 - 6, box.x1 + 6, box.y1 + 6))  # MuPDF needs slack to treat the ring as covered
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE,
                               graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
         for t, box, verts, content, author in found:
@@ -1801,7 +1801,11 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
 
             if not draw_dots:
                 continue
-            side = sides.get(info.index) or auto_sd.get(info.index) or _pin_side(info)
+            side = sides.get(info.index)
+            if side is None:
+                side = auto_sd.get(info.index)
+            if side is None:
+                side = _pin_dir(info)
             if info.index in overrides:
                 # Manually placed: the pin's POINT goes exactly where it was dropped
                 fx, fy = overrides[info.index]
