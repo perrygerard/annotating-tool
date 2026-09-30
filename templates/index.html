@@ -109,15 +109,15 @@
     /* Pins on the updated page */
     .ann-mark { pointer-events: all; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
     .ann-mark.dragging { cursor: grabbing; }
-    .ann-mark.dragging path { stroke: #111; stroke-width: 3px; }
-    .ann-mark path { fill: #111; stroke: #fff; stroke-width: 1.5px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
-    .ann-mark text { fill: #fff; font-weight: 700; font-family: var(--body); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-    .ann-mark.moved path, .ann-mark.reviewed path { fill: var(--success); }
-    .ann-mark.needs_look path      { fill: var(--warn); }
-    .ann-mark.content_removed path { fill: var(--removed); }
-    .ann-mark.deleted path         { fill: var(--ink-light); }
-    .ann-mark:hover path { filter: brightness(1.15); }
-    .ann-mark.active path { stroke: #111; stroke-width: 3px; }
+    /* Pins: soft tinted fill, bold saturated outline, black number */
+    .ann-mark { --pin-fill: #dcf79a; --pin-line: #65a30d; }
+    .ann-mark.needs_look      { --pin-fill: #fed7aa; --pin-line: #ea580c; }
+    .ann-mark.content_removed { --pin-fill: #e4d4fb; --pin-line: #6d28d9; }
+    .ann-mark.deleted         { --pin-fill: #e2e8f0; --pin-line: #64748b; }
+    .ann-mark path { fill: var(--pin-fill); stroke: var(--pin-line); stroke-width: 1px; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
+    .ann-mark text { fill: #0f172a; font-weight: 700; font-family: var(--body); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .ann-mark:hover path { filter: brightness(0.97) saturate(1.1); }
+    .ann-mark.active path, .ann-mark.dragging path { stroke-width: 2px; filter: drop-shadow(0 0 3px rgb(14 165 233 / .9)); }
     .ann-mark-hidden { visibility: hidden; pointer-events: none; }
 
     /* Where the reviewer's box sat on the original: ghosted */
@@ -700,7 +700,7 @@
             svg.appendChild(ph); rects.push(ph);
             return;
           }
-          const r0 = vbW * 0.0135;                // body radius (~14px at typical panel width)
+          const r0 = vbW * 0.00675;               // body radius (~14px at typical panel width)
           const PIN_L = 1.75;
           let r = r0, OFF = r * PIN_L / Math.SQRT2;   // body sits up-right of the point; both shrink as the page is zoomed
           const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
