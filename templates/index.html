@@ -658,6 +658,10 @@
       // This sets the frame height from known data before the image loads,
       // eliminating layout reflow/shaking when images load or user scrolls.
       frame.style.position = 'relative';
+      // Updated side shows the bare page (the References sidebar only exists in the exported PDF);
+      // coordinates stay in full-width units, so only the visible width and aspect change.
+      const visW = rectClass === 'ann-rect' ? vbW * contentFrac : vbW;
+      if (rectClass === 'ann-rect') aspect = aspect / contentFrac;
       frame.style.paddingBottom = (aspect * 100).toFixed(2) + '%';
       frame.dataset.pb = (aspect * 100).toFixed(2);
       frame.style.height = '0';
@@ -681,7 +685,7 @@
 
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('class', 'overlay-svg');
-      svg.setAttribute('viewBox', `0 0 ${vbW} ${vbH}`);
+      svg.setAttribute('viewBox', `0 0 ${visW} ${vbH}`);
       svg.setAttribute('preserveAspectRatio', 'none');
 
       const rects = [];

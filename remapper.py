@@ -1553,19 +1553,21 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
         SIDEBAR_PAD = 10 * S
         DOT_R = DOT_BASE * S
         HEADER_H = 26 * S
-        annots_on_page = page_annots.get(page_num, [])
+        annots_on_page = page_annots.get(page_num, []) if draw_dots else []
 
         # Expand the mediabox rightward
         new_mediabox = fitz.Rect(0, 0, pw + SIDEBAR_W, ph)
-        page.set_mediabox(new_mediabox)
-        page.set_cropbox(new_mediabox)
+        if draw_dots:                      # the review preview (draw_dots=False) stays sidebar-free
+            page.set_mediabox(new_mediabox)
+            page.set_cropbox(new_mediabox)
 
 
         # ── Draw sidebar background ──────────────────────────────────────────
         sidebar_rect = fitz.Rect(pw, 0, pw + SIDEBAR_W, ph)
-        page.draw_rect(sidebar_rect, color=None, fill=SIDEBAR_BG)
-        page.draw_line(fitz.Point(pw, 0), fitz.Point(pw, ph),
-                       color=DIVIDER_COLOR, width=0.5 * S)
+        if draw_dots:
+            page.draw_rect(sidebar_rect, color=None, fill=SIDEBAR_BG)
+            page.draw_line(fitz.Point(pw, 0), fitz.Point(pw, ph),
+                           color=DIVIDER_COLOR, width=0.5 * S)
 
         # ── Pick the largest text size at which all entries fit the page ─────
         text_x_off = SIDEBAR_PAD + DOT_R * 2 + 6 * S
