@@ -6,6 +6,7 @@ import fitz  # PyMuPDF
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
 from remapper import process_pdfs, write_pdf
+from placer import place_references
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
@@ -90,6 +91,90 @@ def remap():
 
     threading.Thread(target=run_job).start()
     return jsonify({"job_id": job_id})
+
+
+@app.route("/place", methods=["POST"])
+def place():
+    """First-time annotation: a Word reference list + a layout PDF -> pins placed on the layout."""
+    if "reference_doc" not in request.files or "layout_pdf" not in request.files:
+        return jsonify({"error": "Both the reference list (.docx) and the layout PDF are required."}), 400
+    doc_file = request.files["reference_doc"]
+    pdf_file = request.files["layout_pdf"]
+    if not doc_file.filename.lower().endswith(".docx"):
+        return jsonify({"error": "The reference list must be a Word (.docx) file."}), 400
+    if not pdf_file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "The layout must be a PDF."}), 400
+
+    job_id = str(uuid.uuid4())
+    doc_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_refs.docx")
+    pdf_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_layout.pdf")
+    output_path = os.path.join(OUTPUT_FOLDER, f"{job_id}_output.pdf")
+    doc_file.save(doc_path)
+    pdf_file.save(pdf_path)
+
+    jobs[job_id] = {"status": "processing", "progress": "Reading the reference list…"}
+
+    def progress(done, total):
+        job = jobs.get(job_id)
+        if job and job.get("status") == "processing":
+            job["progress"] = f"Reading page {done} of {total}…"
+
+    def run_job():
+        try:
+            results = place_references(doc_path, pdf_path, output_path, progress)
+            all_annots = results.pop("_all_annots", [])
+            new_pdf_path_stored = results.pop("_new_pdf_path", pdf_path)
+            preview_path = results.pop("_preview_path", None)
+            jobs[job_id] = {
+                "status": "done",
+                "results": results,
+                "output_path": output_path if os.path.exists(output_path) else None,
+                "annotated_path": None,          # first-time flow: there is no 'before'
+                "new_pdf_path": new_pdf_path_stored,
+                "preview_path": preview_path,
+                "_all_annots": all_annots,
+            }
+        except Exception as e:
+            import traceback
+            jobs[job_id] = {"status": "error", "message": str(e), "trace": traceback.format_exc()}
+
+    threading.Thread(target=run_job).start()
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/template.docx")
+def template_docx():
+    """A ready-to-fill reference list in the layout the placer understands."""
+    import io
+    from docx import Document
+    from docx.shared import Pt
+    d = Document()
+    d.add_heading("Reference list", 1)
+    d.add_paragraph(
+        "One row per spot on the page. List the rows for each superscript number in the order they "
+        "appear in the layout (top to bottom, page by page): the first row for “1” goes on the first "
+        "superscript 1, the second row on the next, and so on. If you would rather point at the "
+        "exact spot, paste the layout copy into “Claim in the layout”. Page is optional.")
+    t = d.add_table(rows=1, cols=4)
+    t.style = "Table Grid"
+    for c, h in zip(t.rows[0].cells, ["#", "Reference / source location", "Claim in the layout (optional)", "Page (optional)"]):
+        c.text = h
+    for row in [("1", "Dendrou 2015/p546/col2/para1", "", ""),
+                ("1", "Dendrou 2015/p556/col2/para3", "", ""),
+                ("2", "Maggi 2023/p2/“research in context”/col2/para2", "", "")]:
+        cells = t.add_row().cells
+        for c, v in zip(cells, row):
+            c.text = v
+    for r in t.rows:
+        for c in r.cells:
+            for p in c.paragraphs:
+                for run in p.runs:
+                    run.font.size = Pt(10)
+    buf = io.BytesIO()
+    d.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name="reference-list-template.docx",
+                     mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.route("/status/<job_id>")

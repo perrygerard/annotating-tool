@@ -50,6 +50,15 @@
     .step { display: flex; align-items: baseline; gap: 8px; font-size: 0.84rem; color: var(--ink-mid); }
     .step-num { font-family: var(--mono); font-size: 0.72rem; font-weight: 700; color: var(--ink); background: var(--bench); border-radius: 5px; padding: 1px 6px; }
     .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 22px; margin-bottom: 20px; }
+    .mode-switch { display: flex; gap: 4px; padding: 4px; margin-bottom: 18px; background: #f1f5f9; border-radius: 999px; }
+    .mode-btn { flex: 1; font: inherit; font-size: 0.82rem; font-weight: 600; color: #475569; background: transparent; border: none; border-radius: 999px; padding: 8px 12px; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
+    .mode-btn:hover { color: #0f172a; }
+    .mode-btn.active { background: #fff; color: #0f172a; box-shadow: 0 1px 2px rgb(15 23 42 / .12), 0 0 0 1px #e2e8f0; }
+    .mode-btn:focus-visible { outline: 2px solid #0ea5e9; outline-offset: 2px; }
+    .template-link { display: none; margin-top: 12px; font-size: 0.8rem; color: #475569; text-align: center; }
+    .template-link a { color: #0369a1; font-weight: 600; text-decoration: none; }
+    .template-link a:hover { text-decoration: underline; }
+    .mode-add .template-link { display: block; }
     .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; position: relative; }
     .upload-grid::after { content: '→'; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 34px; height: 34px; border-radius: 50%; background: var(--btn); color: var(--btn-fg); display: flex; align-items: center; justify-content: center; font-size: 1rem; box-shadow: 0 0 0 5px var(--surface); pointer-events: none; }
     @media (max-width: 560px) { .upload-grid { grid-template-columns: 1fr; } .upload-grid::after { display: none; } }
@@ -282,6 +291,11 @@
     .col-label .cl-right { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 4px; }
     .zoom-val { min-width: 42px; text-align: center; font-size: 0.7rem; font-weight: 600; letter-spacing: 0; text-transform: none; color: #334155; font-variant-numeric: tabular-nums; }
     .show-orig { display: none; }
+    .orig-none .col-labels { grid-template-columns: minmax(0, 1fr); }
+    .orig-none .col-label:first-child, .orig-none .show-orig { display: none; }
+    .orig-none .page-pair { grid-template-columns: minmax(0, 1fr); }
+    .orig-none .page-pair > .page-side:first-child { display: none; }
+    .add-mode .tile.removed { display: none; }
     .orig-collapsed .show-orig { display: inline-flex; }
     .orig-collapsed .col-labels { grid-template-columns: minmax(0, 1fr); }
     .orig-collapsed .col-label:first-child { display: none; }
@@ -307,7 +321,7 @@
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
       </svg>
-      <span id="confirm-btn-label">Download Remapped PDF</span>
+      <span id="confirm-btn-label">Download PDF</span>
     </button>
   </div>
 </header>
@@ -317,7 +331,7 @@
 <div class="upload-inner">
   <div class="intro">
     <h2>Put every review comment back on the right spot.</h2>
-    <p>Upload the annotated PDF and its updated version. Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.</p>
+    <p id="intro-text">Upload the annotated PDF and its updated version. Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.</p>
     <div class="steps">
       <div class="step"><span class="step-num">1</span> Upload both files</div>
       <div class="step"><span class="step-num">2</span> Check the pins</div>
@@ -325,7 +339,11 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="upload-card">
+    <div class="mode-switch" role="tablist" aria-label="What do you want to do?">
+      <button type="button" class="mode-btn active" role="tab" aria-selected="true" data-mode="update">Update existing annotations</button>
+      <button type="button" class="mode-btn" role="tab" aria-selected="false" data-mode="add">Add references to a new PDF</button>
+    </div>
     <div class="upload-grid">
       <div class="upload-zone" id="zone-annotated" data-tag="BEFORE">
         <input type="file" id="input-annotated" accept=".pdf" />
@@ -337,7 +355,7 @@
             <path d="M20.5 22h3M22 20.5v3" stroke-width="1.4"/>
           </svg>
         </div>
-        <div class="upload-label">Annotated PDF</div>
+        <div class="upload-label" id="label-annotated">Annotated PDF</div>
         <div class="upload-hint">Drop the file or click to choose</div>
         <div class="upload-filename" id="name-annotated"></div>
       </div>
@@ -351,13 +369,14 @@
             <path d="M20 23h7" stroke-width="1.6"/>
           </svg>
         </div>
-        <div class="upload-label">Updated PDF</div>
+        <div class="upload-label" id="label-new">Updated PDF</div>
         <div class="upload-hint">Drop the file or click to choose</div>
         <div class="upload-filename" id="name-new"></div>
       </div>
     </div>
     <div class="error-box" id="error-box"></div>
     <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Remap annotations</button>
+    <div class="template-link">Not sure how to lay out the list? <a href="/template.docx">Download the Word template</a></div>
   </div>
 </div>
 </div>
@@ -365,8 +384,8 @@
 <!-- ── Progress screen ── -->
 <div id="progress-screen">
   <div class="progress-card">
-    <h3>Matching callouts to the new pages…</h3>
-    <p>Large PDFs can take up to a minute.</p>
+    <h3 id="progress-title">Matching callouts to the new pages…</h3>
+    <p id="progress-detail">Large PDFs can take up to a minute.</p>
     <div class="progress-bar-wrap">
       <div class="progress-bar" id="progress-bar"></div>
     </div>
@@ -418,6 +437,34 @@
   const submitBtn = document.getElementById('submit-btn');
 
   // ── Upload zone setup ──────────────────────────────────────────────────────
+  let mode = 'update';       // 'update' = remap old annotations, 'add' = place references from a Word list
+  const MODES = {
+    update: { intro: 'Upload the annotated PDF and its updated version. Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.',
+              a: ['BEFORE', 'Annotated PDF', '.pdf'], b: ['AFTER', 'Updated PDF', '.pdf'], btn: 'Remap annotations',
+              title: 'Matching callouts to the new pages…', detail: 'Large PDFs can take up to a minute.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf' },
+    add:    { intro: 'Upload your reference list (Word) and the layout PDF. Each reference is placed from its superscript number or the copy it supports, with a References sidebar. Anything it can’t place is left for you to drag into position.',
+              a: ['REFERENCES', 'Reference list (.docx)', '.docx'], b: ['LAYOUT', 'Layout PDF', '.pdf'], btn: 'Place references',
+              title: 'Placing references on the pages…', detail: 'Pages without selectable text are read with OCR, which takes longer.', endpoint: '/place', fa: 'reference_doc', fb: 'layout_pdf' },
+  };
+  function clearZones() {
+    ['zone-annotated','zone-new'].forEach(id => document.getElementById(id).classList.remove('has-file'));
+    ['name-annotated','name-new'].forEach(id => document.getElementById(id).textContent = '');
+    inputAnnotated.value = ''; inputNew.value = ''; submitBtn.disabled = true;
+  }
+  function setMode(m) {
+    mode = m; const c = MODES[m];
+    document.querySelectorAll('.mode-btn').forEach(b => { const on = b.dataset.mode === m; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
+    document.getElementById('upload-card').classList.toggle('mode-add', m === 'add');
+    document.getElementById('intro-text').textContent = c.intro;
+    document.getElementById('zone-annotated').dataset.tag = c.a[0]; document.getElementById('label-annotated').textContent = c.a[1]; inputAnnotated.accept = c.a[2];
+    document.getElementById('zone-new').dataset.tag = c.b[0]; document.getElementById('label-new').textContent = c.b[1]; inputNew.accept = c.b[2];
+    submitBtn.textContent = c.btn;
+    document.getElementById('progress-title').textContent = c.title;
+    document.getElementById('progress-detail').textContent = c.detail;
+    clearZones(); hideError();
+  }
+  document.querySelectorAll('.mode-btn').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
   function setupZone(inputEl, zoneId, nameId) {
     const zone = document.getElementById(zoneId);
     const nameEl = document.getElementById(nameId);
@@ -430,7 +477,7 @@
     zone.addEventListener('drop', e => {
       e.preventDefault(); zone.classList.remove('drag-over');
       const file = e.dataTransfer.files[0];
-      if (file && file.name.toLowerCase().endsWith('.pdf')) {
+      if (file && file.name.toLowerCase().endsWith(inputEl.accept)) {
         const dt = new DataTransfer(); dt.items.add(file); inputEl.files = dt.files;
         zone.classList.add('has-file'); nameEl.textContent = file.name; checkReady();
       }
@@ -447,8 +494,9 @@
   async function submitJob() {
     hideError();
     const formData = new FormData();
-    formData.append('annotated_pdf', inputAnnotated.files[0]);
-    formData.append('new_pdf', inputNew.files[0]);
+    const cfg = MODES[mode];
+    formData.append(cfg.fa, inputAnnotated.files[0]);
+    formData.append(cfg.fb, inputNew.files[0]);
 
     document.getElementById('upload-screen').style.display = 'none';
     document.getElementById('progress-screen').style.display = 'flex';
@@ -461,7 +509,7 @@
     }, 800);
 
     try {
-      const res = await fetch('/remap', { method: 'POST', body: formData });
+      const res = await fetch(cfg.endpoint, { method: 'POST', body: formData });
       const data = await res.json();
       if (!res.ok) { clearInterval(timer); showUploadError(data.error || 'Upload failed.'); return; }
       currentJobId = data.job_id;
@@ -469,6 +517,7 @@
         try {
           const r = await fetch('/status/' + currentJobId);
           const d = await r.json();
+          if (d.progress) document.getElementById('progress-detail').textContent = d.progress;
           if (d.status === 'done') {
             clearInterval(pollInterval); clearInterval(timer);
             document.getElementById('progress-bar').style.width = '100%';
@@ -606,6 +655,11 @@
     rs.classList.add('visible');
     document.getElementById('header-actions').hidden = false;
 
+    const addMode = results.mode === 'add';
+    document.getElementById('pages-panel').classList.toggle('orig-none', addMode);
+    document.body.classList.toggle('add-mode', addMode);
+    STATUS_LABELS.moved = addMode ? '✓ Placed' : '✓ Moved';
+    document.querySelector('.tile.moved .tile-label').textContent = addMode ? 'Placed' : 'Moved';
     const sk = results.skipped || [];
     const skEl = document.getElementById('skipped-note');
     if (sk.length) {
@@ -674,7 +728,7 @@
       if (rectClass === 'ann-rect') {
         img.dataset.base = imgSrc;                 // updated side: sharpness follows zoom (see loadImg)
         newImgsToObserve.push(img);
-      } else {
+      } else if (imgSrc) {
         let retries = 0;
         img.onerror = () => {
           if (retries++ < 3) setTimeout(() => { img.src = imgSrc + '?r=' + retries; }, 800 * retries);
@@ -812,9 +866,9 @@
       const oldW = pg.old_width || pg.width;
       const oldH = pg.old_height || pg.height;
 
-      // Old (left) side
+      // Old (left) side (first-time flow has no original: no image, hidden by CSS)
       const oldSide = makePageSide(
-        `/preview-original/${currentJobId}/${pg.page_num}`,
+        addMode ? '' : `/preview-original/${currentJobId}/${pg.page_num}`,
         oldW, oldH, pg.old_aspect || pg.aspect,
         pg.annotations, 'ann-rect-old', 'old_', isTall
       );
@@ -1183,7 +1237,7 @@
     const nDel = new Set([...deletedIndices].map(primaryOf)).size;
     const nMoved = new Set([...dotOverrides.keys(), ...sideOverrides.keys()].filter(k => !deletedIndices.has(k))).size;   // pins repositioned
     if (nDel === 0 && nMoved === 0) {
-      label.textContent = 'Download Remapped PDF';
+      label.textContent = 'Download PDF';
       hint.textContent = '';
     } else {
       label.textContent = 'Confirm & Download';
@@ -1244,12 +1298,11 @@
     document.getElementById('header-actions').hidden = true;
     document.getElementById('upload-screen').style.display = 'block';
     document.getElementById('pages-panel').innerHTML = COL_LABELS_HTML;
+    document.getElementById('pages-panel').classList.remove('orig-none');
+    document.body.classList.remove('add-mode');
     zoomIdx = 0; activeEntry = null;
     document.querySelector('[data-act="zoom-out"]').disabled = true;
-    ['zone-annotated','zone-new'].forEach(id => document.getElementById(id).classList.remove('has-file'));
-    ['name-annotated','name-new'].forEach(id => document.getElementById(id).textContent = '');
-    inputAnnotated.value = ''; inputNew.value = '';
-    submitBtn.disabled = true; currentJobId = null;
+    clearZones(); currentJobId = null;
     activeEls = [];
     deletedIndices = new Set();
     reviewedIndices = new Set();
@@ -1257,7 +1310,7 @@
     sideOverrides.clear();
     document.getElementById('ann-list').innerHTML = '';
     document.getElementById('ann-list-header').style.display = 'none';
-    document.getElementById('confirm-btn-label').textContent = 'Download Remapped PDF';
+    document.getElementById('confirm-btn-label').textContent = 'Download PDF';
     document.getElementById('confirm-hint').textContent = '';
     window._annRegistry = [];
     hideError();

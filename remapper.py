@@ -1218,6 +1218,15 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             "parent_index": info.parent_index,
         })
 
+    results = _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path)
+    old_doc.close()
+    new_doc.close()
+    return results
+
+
+def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path):
+    """Number the annotations, build the review-screen preview data and write the output PDFs.
+    old_pdf_path may be None (adding references to a first-time layout: there is no 'before')."""
     num_by_index = assign_numbers(all_annots)
     for info, entry in zip(all_annots, results["annotations"]):
         entry["number"] = num_by_index.get(info.index)
@@ -1231,7 +1240,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
     pages_preview = []
     preview_doc = fitz.open(new_pdf_path)
-    old_preview_doc = fitz.open(old_pdf_path)
+    old_preview_doc = fitz.open(old_pdf_path) if old_pdf_path else None
     for (page_num, out_pn) in sorted(annots_by_page.keys()):
         if out_pn >= len(preview_doc):
             continue
@@ -1243,7 +1252,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
         # Old page dimensions (may differ from new page)
         old_pw, old_ph = pw, ph
-        if page_num < len(old_preview_doc):
+        if old_preview_doc is not None and page_num < len(old_preview_doc):
             old_page = old_preview_doc[page_num]
             old_pw, old_ph = old_page.rect.width, old_page.rect.height
 
@@ -1314,7 +1323,8 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             "annotations": overlay_annots,
         })
     preview_doc.close()
-    old_preview_doc.close()
+    if old_preview_doc is not None:
+        old_preview_doc.close()
     results["pages"] = pages_preview
 
     # ── 5. Write output PDF ───────────────────────────────────────────────────
@@ -1323,8 +1333,6 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     preview_path = output_path[:-4] + "_preview.pdf" if output_path.endswith(".pdf") else output_path + "_preview"
     write_pdf(all_annots, new_pdf_path, preview_path, skip_indices=set(), draw_dots=False)
     results["_preview_path"] = preview_path
-    old_doc.close()
-    new_doc.close()
 
     # Store all_annots on results for use by confirm/re-write endpoint
     results["_all_annots"] = all_annots

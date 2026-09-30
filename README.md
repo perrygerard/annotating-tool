@@ -37,3 +37,19 @@ docker run -p 5000:5000 annotation-remapper
 - Max upload: 100MB per PDF
 - Files auto-deleted after 1 hour
 - Unmatched annotations are flagged in the results table for manual review
+
+## Add references to a new PDF (first-time annotation)
+
+On the upload screen choose **Add references to a new PDF** and upload a Word reference list plus the layout PDF.
+Download the template from the app (`/template.docx`). Each row is one spot on the page:
+
+| # | Reference / source location | Claim in the layout (optional) | Page (optional) |
+|---|---|---|---|
+
+- Rows with a **claim** are placed by fuzzy-searching that copy on the page.
+- Rows with only a **#** are paired, in reading order, with the superscripts of that number
+  (first row for "1" → first superscript 1, …). A count mismatch is flagged, never guessed.
+- Pages without a text layer are read with OCR (Tesseract) and flagged unless the match is very strong.
+- Anything not placed is kept as a pin you drag into position. Review and export work as in the remap flow.
+
+Code: `placer.py` (parser + placement), `POST /place` in `app.py`.
