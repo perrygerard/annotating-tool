@@ -171,6 +171,9 @@ def confirm(job_id):
         return jsonify({"error": str(e)}), 500
 
 
+MAX_PREVIEW_PIXELS = 36_000_000    # keeps one render's memory bounded on very tall pages
+
+
 def _render_page_png(pdf_path, page_num, target_width_px=640, max_height_px=8000):
     """Render a PDF page scaled so its width fits target_width_px."""
     doc = fitz.open(pdf_path)
@@ -180,6 +183,7 @@ def _render_page_png(pdf_path, page_num, target_width_px=640, max_height_px=8000
         page = doc[page_num - 1]
         # Scale so the rendered width == target_width_px regardless of PDF dimensions
         scale = min(target_width_px / page.rect.width, max_height_px / page.rect.height)
+        scale = min(scale, (MAX_PREVIEW_PIXELS / (page.rect.width * page.rect.height)) ** 0.5)
         mat = fitz.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         return pix.tobytes("png")
@@ -204,7 +208,11 @@ def preview(job_id, page_num):
     if not output_path or not os.path.exists(output_path):
         abort(404)
     try:
-        png_bytes = _render_page_png(output_path, page_num)
+        # ?w= asks for a sharper render (zoom / retina); tall pages are capped by height and pixel count
+        w = request.args.get("w", type=int) or 640
+        w = max(320, min(w, 2560))
+        png_bytes = _render_page_png(output_path, page_num, target_width_px=w,
+                                     max_height_px=8000 if w <= 640 else 16000)
         if png_bytes is None:
             abort(404)
         from flask import Response
