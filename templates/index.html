@@ -324,14 +324,14 @@
     /* Toolbar (Box + zoom): larger, bolder controls */
     .col-label { min-height: 52px; }
     .col-label .cl-right { gap: 10px; }
-    .cl-right .cl-btn { font-size: 0.8rem; font-weight: 700; color: #3a4659; border-radius: 8px; box-shadow: 0 0 0 1.5px #d6deea; }
+    .cl-right .cl-btn { font-size: 0.8rem; font-weight: 700; color: #3a4659; border-radius: 5px; box-shadow: 0 0 0 1.5px #d6deea; }
     .cl-right .cl-btn:hover:not(:disabled) { background: #f4f7fb; }
-    .cl-right .tb-box { height: 36px; padding: 0 14px 0 12px; gap: 9px; }
+    .cl-right .tb-box { height: 28px; padding: 0 14px 0 12px; gap: 9px; }
     .box-ico { flex: none; fill: rgb(200 50 44 / .05); stroke: #c8322c; stroke-width: 2.5; }
-    .zoom-group { display: flex; align-items: center; gap: 2px; height: 36px; padding: 4px; border-radius: 9px; background: #f6f8fb; box-shadow: 0 0 0 1.5px #d6deea; box-sizing: border-box; }
+    .zoom-group { display: flex; align-items: center; gap: 2px; height: 28px; padding: 4px; border-radius: 5px; background: #f6f8fb; box-shadow: 0 0 0 1.5px #d6deea; box-sizing: border-box; }
     .zoom-group .cl-btn { box-shadow: 0 0 0 1.5px #d6deea; }
-    .zoom-group .cl-btn.icon { width: 28px; height: 28px; border-radius: 6px; }
-    .zoom-group .zoom-val { min-width: 54px; height: 28px; padding: 0 6px; background: transparent; box-shadow: none; font-size: 0.8rem; font-weight: 700; justify-content: center; }
+    .zoom-group .cl-btn.icon { width: 20px; height: 20px; border-radius: 3px; }
+    .zoom-group .zoom-val { min-width: 54px; height: 20px; padding: 0 6px; background: transparent; box-shadow: none; font-size: 0.8rem; font-weight: 700; justify-content: center; }
     .zoom-group .zoom-val:hover:not(:disabled) { background: #eef2f8; }
     .cl-right .tb-box.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1.5px #0f172a; }
     .cl-right .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
@@ -604,10 +604,10 @@
             <svg class="box-ico" width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><rect x="1.25" y="1.25" width="15.5" height="11.5" rx="2.5"/></svg>Box</button>
           <div class="zoom-group">
             <button type="button" class="cl-btn icon" data-act="zoom-out" aria-label="Zoom out" title="Zoom out">
-              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt" fill="none"/></svg></button>
+              <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
             <button type="button" class="cl-btn zoom-val" data-act="zoom-reset" aria-label="Reset zoom" title="Reset zoom" id="zoom-val">100%</button>
             <button type="button" class="cl-btn icon" data-act="zoom-in" aria-label="Zoom in" title="Zoom in">
-              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M6 1.5v9" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt" fill="none"/></svg></button>
+              <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M6 1.5v9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
           </div>
         </div>
       </div>
