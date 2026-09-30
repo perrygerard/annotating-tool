@@ -795,7 +795,6 @@ def copy_annot_metadata(src_info: dict, annot: fitz.Annot):
 def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict:
     old_doc = fitz.open(old_pdf_path)
     new_doc = fitz.open(new_pdf_path)
-    strip_pin_text(old_doc)       # no-op unless old_pdf is itself a Carryover export
 
     results = {
         "total": 0,
@@ -1505,92 +1504,6 @@ def _draw_number_dot(page, cx, cy, number, radius=7):
                      fontname="helv", fontsize=fontsize, color=(1, 1, 1))
 
 
-
-CARRIER_SUBJECT = "CarryoverPin"
-_CARRIER_BOX = {}
-
-
-def _make_carrier(page, box, tip, content, author, line_to=None):
-    """Hidden real annotation for one pin. line_to=None -> FreeText callout whose tip is `tip`;
-    else a hidden arrow from `tip` to `line_to` (a 2nd target touching its callout's carrier)."""
-    doc = page.parent
-    H = page.rect.height
-    try:
-        if line_to is None:
-            ann = page.add_freetext_annot(box, content or " ", fontsize=6,
-                                          text_color=(0, 0, 0), fill_color=(1, 1, 1))
-            ann.update()
-            doc.xref_set_key(ann.xref, "CL", f"[{tip[0]:.3f} {H - tip[1]:.3f} {box.x0:.3f} {H - box.y1:.3f}]")
-            doc.xref_set_key(ann.xref, "IT", "/FreeTextCallout")
-        else:
-            ann = page.add_line_annot(fitz.Point(*tip), fitz.Point(*line_to))
-            ann.update()
-        inf = ann.info
-        inf["subject"] = CARRIER_SUBJECT
-        if author:
-            inf["title"] = author
-        inf["content"] = content or ""
-        ann.set_info(inf)
-        ann.set_flags(fitz.PDF_ANNOT_IS_HIDDEN)
-        ann.update()
-        doc.xref_set_key(ann.xref, "CPBox", f"[{box.x0:.3f} {box.y0:.3f} {box.x1:.3f} {box.y1:.3f}]")
-        return ann
-    except Exception:
-        return None
-
-
-def _add_carrier(page, info, cx, cy, px, py, r, pins_on_page, global_num, out_page):
-    """Write a hidden, real annotation for a pin so a Carryover export can be fed back in as the
-    'annotated' PDF of the next round."""
-    pts = _pin_polygon(cx, cy, px, py, r)
-    box = fitz.Rect(min(x for x, _ in pts) - 1, min(y for _, y in pts) - 1,
-                    max(x for x, _ in pts) + 1, max(y for _, y in pts) + 1)
-    key = (id(page.parent), info.index)
-    if info.parent_index is None:
-        _make_carrier(page, box, (px, py), info.content, info.author)
-        _CARRIER_BOX[key] = box
-    else:
-        pbox = _CARRIER_BOX.get((id(page.parent), info.parent_index))
-        if pbox is not None:
-            _make_carrier(page, box, (px, py), info.content, info.author, (pbox.x0 + 1, pbox.y0 + 1))
-
-
-def strip_pin_text(doc):
-    """Remove the pin glyph text (the numbers) a previous Carryover export drew, so it can't
-    pollute the text fingerprints taken around each callout tip. Redaction also deletes the
-    annotations under it, so the carriers are re-created afterwards."""
-    for page in doc:
-        try:                                   # drop the sidebar: compare on the original page area
-            v = doc.xref_get_key(page.xref, "CPOrigW")[1]
-            if v and v != "null":
-                page.set_cropbox(fitz.Rect(0, 0, float(v), page.mediabox.height))
-        except Exception:
-            pass
-        found = []
-        for a in page.annots() or []:
-            if a.info.get("subject") != CARRIER_SUBJECT:
-                continue
-            try:
-                v = doc.xref_get_key(a.xref, "CPBox")[1]
-                x0, y0, x1, y1 = [float(t) for t in re.findall(r'-?\d+(?:\.\d+)?', v)]
-                verts = list(a.vertices or [])
-                found.append((a.type[0], fitz.Rect(x0, y0, x1, y1), verts, a.info.get("content", ""),
-                              a.info.get("title", "")))
-            except Exception:
-                continue
-        if not found:
-            continue
-        for _, box, *_r in found:
-            page.add_redact_annot(box)
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE,
-                              graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
-        for t, box, verts, content, author in found:
-            if t == 2 and verts:
-                _make_carrier(page, box, verts[0], content, author)
-            elif t == 3 and len(verts) >= 2:
-                _make_carrier(page, box, verts[0], content, author, verts[-1])
-
-
 def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
               overrides=None, draw_dots=True, sides=None):
     """Write annotations to a new PDF with a numbered reference sidebar.
@@ -1654,7 +1567,6 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
         new_mediabox = fitz.Rect(0, 0, pw + SIDEBAR_W, ph)
         if draw_dots:                      # the review preview (draw_dots=False) stays sidebar-free
             page.set_mediabox(new_mediabox)
-            out_doc.xref_set_key(page.xref, "CPOrigW", f"{pw:.4f}")   # lets a re-upload drop the sidebar
             # Use the mediabox as stored: PDFs round page sizes on write, so passing new_mediabox
             # back in can land a hair outside it ("CropBox not in MediaBox") on fractional sizes.
             try:
@@ -1741,8 +1653,6 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             cx = max(PIN_R + 1, min(cx, pw - PIN_R - 1))
             cy = max(PIN_R + 1, min(cy, ph - PIN_R - 1))
             _draw_pin(page, cx, cy, px, py, num, PIN_R)
-            if draw_dots:
-                _add_carrier(page, info, cx, cy, px, py, PIN_R, pins_on_page, global_num, _out_page(info))
 
     # Rectangles are intentionally not written: the numbered dots replace them.
 

@@ -67,6 +67,11 @@ def remap():
     def run_job():
         try:
             results = process_pdfs(annotated_path, new_path, output_path)
+            if not results.get("total"):
+                raise ValueError(
+                    "No annotations were found in the first PDF. Upload the reviewer-annotated PDF (with live "
+                    "comment/callout annotations) or an export from Carryover. Exports made before this "
+                    "update have flattened pins and can't be re-used - re-run them from the original.")
             # Keep new_path for re-writes via /confirm; keep annotated_path for previews
             all_annots = results.pop("_all_annots", [])
             new_pdf_path_stored = results.pop("_new_pdf_path", new_path)

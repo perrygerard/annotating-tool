@@ -53,3 +53,6 @@ Download the template from the app (`/template.docx`). Each row is one spot on t
 - Anything not placed is kept as a pin you drag into position. Review and export work as in the remap flow.
 
 Code: `placer.py` (parser + placement), `POST /place` in `app.py`.
+
+### Chaining rounds
+Every pin in an exported PDF is also written as a hidden, real annotation (its reference text and target point), so an export can be uploaded as the "annotated" PDF of the next round. Exports made before this feature have flattened pins and can't be re-used.
