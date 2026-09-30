@@ -56,3 +56,6 @@ Code: `placer.py` (parser + placement), `POST /place` in `app.py`.
 
 ### Chaining rounds
 Every pin in an exported PDF is also written as a hidden, real annotation (its reference text and target point), so an export can be uploaded as the "annotated" PDF of the next round. Exports made before this feature have flattened pins and can't be re-used.
+
+### Boxes
+Rectangles (the red boxes around text or artwork) are carried through every round: the export draws them as real Square annotations and the next round reads them back and remaps them. In the review page the **Box** button draws a new one: drag a rough rectangle and it shrink-wraps to the content inside (`boxsnap.py`); it gets a numbered pin on its top-right corner and an editable reference text. Boxes can be moved, resized and removed, and any pin's reference text can be edited in the list.

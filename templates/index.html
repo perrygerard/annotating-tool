@@ -131,6 +131,31 @@
     .ann-mark.active path, .ann-mark.dragging path { stroke: var(--pin-ink); stroke-width: 1.5px; filter: drop-shadow(0 0 3px rgb(14 165 233 / .9)); }
     .ann-mark-hidden { visibility: hidden; pointer-events: none; }
 
+
+    /* Boxes (rectangles) on the updated page: the red box a reviewer draws in Acrobat */
+    .ann-box { pointer-events: none; --box: #c8322b; }
+    .ann-box .box-rect { fill: rgb(200 50 43 / .05); stroke: var(--box); stroke-width: 2px; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .ann-box.needs_look .box-rect { stroke: var(--warn); stroke-dasharray: 6 4; fill: rgb(217 119 6 / .06); }
+    .ann-box.content_removed .box-rect { stroke: var(--removed); stroke-dasharray: 6 4; fill: rgb(124 58 237 / .05); }
+    .ann-box .box-hit { fill: none; stroke: transparent; stroke-width: 14px; vector-effect: non-scaling-stroke; pointer-events: stroke; cursor: move; touch-action: none; }
+    .ann-box.deleted { opacity: .3; }
+    .ann-box.deleted .box-rect { stroke-dasharray: 3 4; }
+    .ann-box .box-h, .ann-box .box-x { display: none; }
+    .ann-box.active .box-h, .ann-box.active .box-x { display: block; }
+    .ann-box.active .box-rect { stroke-width: 2.5px; }
+    .ann-box .box-h { fill: #fff; stroke: var(--accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: all; touch-action: none; }
+    .ann-box .box-x circle { fill: #fff; stroke: var(--box); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+    .ann-box .box-x path { stroke: var(--box); stroke-width: 1.6px; vector-effect: non-scaling-stroke; fill: none; stroke-linecap: round; }
+    .ann-box .box-x { pointer-events: all; cursor: pointer; }
+    .ann-drawing { fill: rgb(200 50 43 / .08); stroke: #c8322b; stroke-width: 2px; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+    .pages-panel.drawing .page-frame { cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .pages-panel.drawing .ann-mark, .pages-panel.drawing .ann-box, .pages-panel.drawing .ann-box * { pointer-events: none !important; }
+    .cl-btn.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1px #0f172a; }
+    .cl-btn.on:hover:not(:disabled) { background: #1e293b; }
+    .dc-edit { width: 100%; box-sizing: border-box; font: inherit; font-size: 0.8rem; line-height: 1.45; color: var(--ink); background: var(--surface); border: 1px solid transparent; border-radius: 6px; padding: 6px 8px; margin: 0 0 6px; resize: none; overflow: hidden; display: block; }
+    .dc-edit:hover { border-color: #cbd5e1; }
+    .dc-edit:focus { outline: none; border-color: var(--accent); background: #fff; }
+
     /* Where the reviewer's box sat on the original: ghosted */
     .ann-rect-old { pointer-events: all; cursor: pointer; fill: transparent; stroke-width: 1.5px; stroke-dasharray: 4 3; transition: fill 0.15s; }
     .ann-rect-old.moved { stroke: var(--success); opacity: 0.45; } .ann-rect-old.needs_look { stroke: var(--warn); opacity: 0.45; } .ann-rect-old.content_removed { stroke: var(--removed); opacity: 0.45; }
@@ -430,6 +455,9 @@
   let reviewedIndices = new Set(); // annotation .index values marked "Looks Good"
   const dotOverrides = new Map();  // annotation .index -> [x_frac, y_frac] manual pin-point positions
   const sideOverrides = new Map(); // annotation .index -> +1|-1 manual body side (only when it differs from the default)
+  const boxEdits = new Map();      // box .index -> [x, y, w, h] fractions of the output page (boxes the user moved / resized)
+  const contentEdits = new Map();  // annotation .index -> edited reference text
+  let drawMode = false, newBoxSeq = 0;
 
   const inputAnnotated = document.getElementById('input-annotated');
   const inputNew = document.getElementById('input-new');
@@ -554,6 +582,8 @@
           <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 5l5 5-5 5"/></svg>Show original</button>
         <span>Updated</span>
         <div class="cl-right" role="group" aria-label="Zoom the updated pages">
+          <button type="button" class="cl-btn" data-act="draw-box" id="draw-btn" aria-pressed="false" title="Drag a box around text or artwork on the updated page (Esc to stop)">
+            <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5"/></svg>Box</button>
           <button type="button" class="cl-btn icon" data-act="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
           <button type="button" class="cl-btn zoom-val" data-act="zoom-reset" aria-label="Reset zoom" title="Reset zoom" id="zoom-val">100%</button>
           <button type="button" class="cl-btn icon" data-act="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
@@ -637,6 +667,7 @@
     else if (act === 'zoom-in') setZoom(zoomIdx + 1);
     else if (act === 'zoom-out') setZoom(zoomIdx - 1);
     else if (act === 'zoom-reset') setZoom(0);
+    else if (act === 'draw-box') setDrawMode(!drawMode);
   });
   window.addEventListener('resize', () => { clearTimeout(window._rzT); window._rzT = setTimeout(refreshImages, 250); });
   document.querySelector('[data-act="zoom-out"]').disabled = true;
@@ -648,6 +679,8 @@
     reviewedIndices = new Set();
     dotOverrides.clear();
     sideOverrides.clear();
+    boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0;
+    if (drawMode) setDrawMode(false);
     updateConfirmButton();
     const rs = document.getElementById('results-screen');
     rs.style.top = document.querySelector('header').getBoundingClientRect().height + 'px';
@@ -693,6 +726,175 @@
       rect.setAttribute('height', rh);
       rect.setAttribute('rx', 2);
       return rect;
+    }
+
+    function buildPin(svg, ann, vbW, vbH, contentFrac) {
+      const r0 = vbW * 0.00945;               // body radius (~14px at typical panel width)
+      const PIN_L = 1.75;
+      let r = r0, OFF = r * PIN_L / Math.SQRT2;   // body sits up-right of the point; both shrink as the page is zoomed
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'ann-mark ' + (ann.status || 'moved'));
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      let lbl = String(ann.number) + (ann.sub_label || '');
+      t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
+      t.textContent = lbl;
+      const tt = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      tt.textContent = `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag to reposition`;
+      g._setLabel = () => {
+        lbl = String(ann.number) + (ann.sub_label || '');
+        t.textContent = lbl;
+        t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
+        tt.textContent = `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag to reposition`;
+      };
+      g.appendChild(tt); g.appendChild(path); g.appendChild(t);
+      svg.appendChild(g);
+
+      // Teardrop: point at (px,py), round body centred at (cx,cy)
+      const pinD = (cx, cy, px, py) => {
+        const dx = px - cx, dy = py - cy, d = Math.hypot(dx, dy);
+        if (d < r * 1.15) return `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
+        const th = Math.atan2(dy, dx), phi = Math.acos(r / d);
+        const t1 = [cx + r * Math.cos(th + phi), cy + r * Math.sin(th + phi)];
+        const t2 = [cx + r * Math.cos(th - phi), cy + r * Math.sin(th - phi)];
+        return `M ${px} ${py} L ${t1[0]} ${t1[1]} A ${r} ${r} 0 1 1 ${t2[0]} ${t2[1]} Z`;
+      };
+      const maxX = vbW * contentFrac;
+      g._side = ann.pin_side || 1; g._defSide = g._side;   // +1 body right of the point, -1 left
+      // Place by the POINT; the body is clamped to stay on the page
+      g._setPos = (px, py) => {
+        const cx = Math.max(r, Math.min(px + g._side * OFF, maxX - r));
+        const cy = Math.max(r, Math.min(py - OFF, vbH - r));
+        path.setAttribute('d', pinD(cx, cy, px, py));
+        t.setAttribute('x', cx); t.setAttribute('y', cy);
+        g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
+        g._px = px; g._py = py;
+      };
+      g._setSide = s => { g._side = s; g._setPos(g._px, g._py); };
+      // Keep pins the same size on screen while the page is zoomed: only the body shrinks, the point stays put
+      g._setZoom = z => {
+        r = r0 / z; OFF = r * PIN_L / Math.SQRT2;
+        t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
+        g._setPos(g._px, g._py);
+      };
+      g._orig = { px: ann.dot_x * vbW, py: ann.dot_y * vbH };
+      g._setPos(g._orig.px, g._orig.py);
+
+      // ── Drag the pin; its point is what gets saved ─────────────────
+      let dragging = false, moved = false, sx = 0, sy = 0, p0 = null, start = null;
+      const toSvg = ev => {
+        const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+        return pt.matrixTransform(svg.getScreenCTM().inverse());
+      };
+      g.addEventListener('pointerdown', ev => {
+        if (ev.button !== undefined && ev.button !== 0) return;
+        dragging = true; moved = false; sx = ev.clientX; sy = ev.clientY;
+        p0 = toSvg(ev); start = { x: g._px, y: g._py };
+        try { g.setPointerCapture(ev.pointerId); } catch (e) {}
+        ev.preventDefault();
+      });
+      g.addEventListener('pointermove', ev => {
+        if (!dragging) return;
+        if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+        moved = true; g.classList.add('dragging');
+        const p = toSvg(ev);
+        let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
+        // keep the whole pin on the page (not in the sidebar strip)
+        nx = Math.max(r - g._side * OFF, Math.min(nx, maxX - r - g._side * OFF));
+        ny = Math.max(r + OFF, Math.min(ny, vbH - r + OFF));
+        g._setPos(nx, ny);
+      });
+      const end = ev => {
+        if (!dragging) return;
+        dragging = false; g.classList.remove('dragging');
+        try { g.releasePointerCapture(ev.pointerId); } catch (e) {}
+        if (moved) onMarkerMoved(ann.index, g._px / vbW, g._py / vbH);
+      };
+      g.addEventListener('pointerup', end);
+      g.addEventListener('pointercancel', end);
+      return g;
+    }
+
+    const SVGNS = 'http://www.w3.org/2000/svg';
+    const svgEl = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in (attrs || {})) e.setAttribute(k, attrs[k]); return e; };
+
+    // A box on the updated page: drag its border to move it, drag a handle to resize (handles show when it is selected)
+    function buildBox(svg, ann, vbW, vbH, contentFrac) {
+      const maxX = vbW * contentFrac, MIN = vbW * 0.008;
+      const g = svgEl('g', { 'class': 'ann-box ' + (ann.status || 'moved') });
+      const rect = svgEl('rect', { 'class': 'box-rect' });
+      const hit = svgEl('rect', { 'class': 'box-hit' });
+      g.appendChild(rect); g.appendChild(hit);
+      const HN = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+      const hs = {};
+      HN.forEach(n => { hs[n] = svgEl('rect', { 'class': 'box-h', 'data-h': n }); hs[n].style.cursor = n + '-resize'; g.appendChild(hs[n]); });
+      const xb = svgEl('g', { 'class': 'box-x' });
+      xb.appendChild(svgEl('circle', { r: 1 })); xb.appendChild(svgEl('path', {}));
+      xb.appendChild(svgEl('title')); xb.lastChild.textContent = 'Remove this box';
+      g.appendChild(xb);
+      svg.appendChild(g);
+
+      let R = { x: ann.x * vbW, y: ann.y * vbH, w: ann.w * vbW, h: ann.h * vbH };
+      let hsz = vbW * 0.0055;
+      const layout = () => {
+        const { x, y, w, h } = R;
+        [rect, hit].forEach(e => { e.setAttribute('x', x); e.setAttribute('y', y); e.setAttribute('width', w); e.setAttribute('height', h); });
+        const pos = { nw: [x, y], n: [x + w / 2, y], ne: [x + w, y], e: [x + w, y + h / 2], se: [x + w, y + h], s: [x + w / 2, y + h], sw: [x, y + h], w: [x, y + h / 2] };
+        HN.forEach(n => { const h2 = hs[n]; h2.setAttribute('x', pos[n][0] - hsz / 2); h2.setAttribute('y', pos[n][1] - hsz / 2); h2.setAttribute('width', hsz); h2.setAttribute('height', hsz); });
+        const cx = x + w, cy = y, rr = hsz * 1.35;       // remove button sits just above the top-right corner
+        const bx = Math.min(cx + rr * 0.3, maxX - rr), by = Math.max(cy - rr * 1.6, rr);
+        xb.firstChild.setAttribute('cx', bx); xb.firstChild.setAttribute('cy', by); xb.firstChild.setAttribute('r', rr);
+        const k = rr * 0.42;
+        xb.children[1].setAttribute('d', `M ${bx - k} ${by - k} L ${bx + k} ${by + k} M ${bx + k} ${by - k} L ${bx - k} ${by + k}`);
+      };
+      g._setRect = (x, y, w, h) => { R = { x, y, w, h }; layout(); };
+      g._setZoom = z => { hsz = vbW * 0.0055 / z; layout(); };
+      g._frac = () => [R.x / vbW, R.y / vbH, R.w / vbW, R.h / vbH];
+      g._setZoom(zoomLevel());
+
+      xb.addEventListener('pointerdown', ev => { ev.stopPropagation(); ev.preventDefault(); });
+      xb.addEventListener('click', ev => { ev.stopPropagation(); const i = registryIdxByAnn(ann.index); if (i >= 0) toggleDelete(i, ann.index); });
+
+      let mode = null, p0 = null, r0 = null, moved = false;
+      const toSvg = ev => { const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
+      const down = ev => {
+        if (ev.button !== undefined && ev.button !== 0) return;
+        mode = ev.target.dataset && ev.target.dataset.h ? ev.target.dataset.h : (ev.target === hit ? 'move' : null);
+        if (!mode) return;
+        p0 = toSvg(ev); r0 = { ...R }; moved = false;
+        try { ev.target.setPointerCapture(ev.pointerId); } catch (e) {}
+        ev.preventDefault();
+      };
+      const move = ev => {
+        if (!mode) return;
+        const p = toSvg(ev), dx = p.x - p0.x, dy = p.y - p0.y;
+        if (!moved && Math.hypot(dx, dy) < 0.8 * (vbW / 700)) return;       // ignore sub-pixel jitter on click
+        moved = true;
+        let { x, y, w, h } = r0;
+        if (mode === 'move') {
+          x = Math.max(0, Math.min(r0.x + dx, maxX - w)); y = Math.max(0, Math.min(r0.y + dy, vbH - h));
+        } else {
+          let x0 = r0.x, y0 = r0.y, x1 = r0.x + r0.w, y1 = r0.y + r0.h;
+          if (mode.includes('w')) x0 = Math.min(r0.x + dx, x1 - MIN);
+          if (mode.includes('e')) x1 = Math.max(r0.x + r0.w + dx, x0 + MIN);
+          if (mode.includes('n')) y0 = Math.min(r0.y + dy, y1 - MIN);
+          if (mode.includes('s')) y1 = Math.max(r0.y + r0.h + dy, y0 + MIN);
+          x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(maxX, x1); y1 = Math.min(vbH, y1);
+          x = x0; y = y0; w = x1 - x0; h = y1 - y0;
+        }
+        g._setRect(x, y, w, h);
+      };
+      const up = ev => {
+        if (!mode) return;
+        const was = mode; mode = null;
+        try { ev.target.releasePointerCapture(ev.pointerId); } catch (e) {}
+        if (moved) onBoxChanged(ann.index, g._frac());
+      };
+      g.addEventListener('pointerdown', down);
+      g.addEventListener('pointermove', move);
+      g.addEventListener('pointerup', up);
+      g.addEventListener('pointercancel', up);
+      return g;
     }
 
     function makePageSide(imgSrc, vbW, vbH, aspect, annots, rectClass, coordKey, isTall, contentFrac = 1) {
@@ -745,91 +947,23 @@
       const asDots = rectClass === 'ann-rect';   // new (right) side: numbered markers, no boxes
       annots.forEach(ann => {
         if (asDots) {
+          if (ann.type === 'Square') {           // a box: drawn on the updated page (only if it has a place there)
+            if (ann.placed === false) {
+              const ph = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+              ph.setAttribute('class', 'ann-mark-hidden'); ph.setAttribute('width', 1); ph.setAttribute('height', 1);
+              svg.appendChild(ph); rects.push(ph); return;
+            }
+            rects.push(buildBox(svg, ann, vbW, vbH, contentFrac)); return;
+          }
           if (ann.number == null || ann.dot_x == null) {
-            // Rectangles have no marker; keep an invisible placeholder so indexes stay aligned
+            // No marker for this one; keep an invisible placeholder so indexes stay aligned
             const ph = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
             ph.setAttribute('class', 'ann-mark-hidden');
             ph.setAttribute('x', 0); ph.setAttribute('y', 0); ph.setAttribute('width', 1); ph.setAttribute('height', 1);
             svg.appendChild(ph); rects.push(ph);
             return;
           }
-          const r0 = vbW * 0.00945;               // body radius (~14px at typical panel width)
-          const PIN_L = 1.75;
-          let r = r0, OFF = r * PIN_L / Math.SQRT2;   // body sits up-right of the point; both shrink as the page is zoomed
-          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-          g.setAttribute('class', 'ann-mark ' + (ann.status || 'moved'));
-          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          const lbl = String(ann.number) + (ann.sub_label || '');
-          t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
-          t.textContent = lbl;
-          const tt = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-          tt.textContent = `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag to reposition`;
-          g.appendChild(tt); g.appendChild(path); g.appendChild(t);
-          svg.appendChild(g); rects.push(g);
-
-          // Teardrop: point at (px,py), round body centred at (cx,cy)
-          const pinD = (cx, cy, px, py) => {
-            const dx = px - cx, dy = py - cy, d = Math.hypot(dx, dy);
-            if (d < r * 1.15) return `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
-            const th = Math.atan2(dy, dx), phi = Math.acos(r / d);
-            const t1 = [cx + r * Math.cos(th + phi), cy + r * Math.sin(th + phi)];
-            const t2 = [cx + r * Math.cos(th - phi), cy + r * Math.sin(th - phi)];
-            return `M ${px} ${py} L ${t1[0]} ${t1[1]} A ${r} ${r} 0 1 1 ${t2[0]} ${t2[1]} Z`;
-          };
-          const maxX = vbW * contentFrac;
-          g._side = ann.pin_side || 1; g._defSide = g._side;   // +1 body right of the point, -1 left
-          // Place by the POINT; the body is clamped to stay on the page
-          g._setPos = (px, py) => {
-            const cx = Math.max(r, Math.min(px + g._side * OFF, maxX - r));
-            const cy = Math.max(r, Math.min(py - OFF, vbH - r));
-            path.setAttribute('d', pinD(cx, cy, px, py));
-            t.setAttribute('x', cx); t.setAttribute('y', cy);
-            g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
-            g._px = px; g._py = py;
-          };
-          g._setSide = s => { g._side = s; g._setPos(g._px, g._py); };
-          // Keep pins the same size on screen while the page is zoomed: only the body shrinks, the point stays put
-          g._setZoom = z => {
-            r = r0 / z; OFF = r * PIN_L / Math.SQRT2;
-            t.setAttribute('font-size', r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8));
-            g._setPos(g._px, g._py);
-          };
-          g._orig = { px: ann.dot_x * vbW, py: ann.dot_y * vbH };
-          g._setPos(g._orig.px, g._orig.py);
-
-          // ── Drag the pin; its point is what gets saved ─────────────────
-          let dragging = false, moved = false, sx = 0, sy = 0, p0 = null, start = null;
-          const toSvg = ev => {
-            const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
-            return pt.matrixTransform(svg.getScreenCTM().inverse());
-          };
-          g.addEventListener('pointerdown', ev => {
-            if (ev.button !== undefined && ev.button !== 0) return;
-            dragging = true; moved = false; sx = ev.clientX; sy = ev.clientY;
-            p0 = toSvg(ev); start = { x: g._px, y: g._py };
-            try { g.setPointerCapture(ev.pointerId); } catch (e) {}
-            ev.preventDefault();
-          });
-          g.addEventListener('pointermove', ev => {
-            if (!dragging) return;
-            if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
-            moved = true; g.classList.add('dragging');
-            const p = toSvg(ev);
-            let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
-            // keep the whole pin on the page (not in the sidebar strip)
-            nx = Math.max(r - g._side * OFF, Math.min(nx, maxX - r - g._side * OFF));
-            ny = Math.max(r + OFF, Math.min(ny, vbH - r + OFF));
-            g._setPos(nx, ny);
-          });
-          const end = ev => {
-            if (!dragging) return;
-            dragging = false; g.classList.remove('dragging');
-            try { g.releasePointerCapture(ev.pointerId); } catch (e) {}
-            if (moved) onMarkerMoved(ann.index, g._px / vbW, g._py / vbH);
-          };
-          g.addEventListener('pointerup', end);
-          g.addEventListener('pointercancel', end);
+          rects.push(buildPin(svg, ann, vbW, vbH, contentFrac));
           return;
         }
         const x = ann[coordKey + 'x'] !== undefined ? ann[coordKey + 'x'] : ann.x;
@@ -844,7 +978,7 @@
       frame.appendChild(svg);
       scroll.appendChild(frame);
       side.appendChild(scroll);
-      return { sideEl: side, scrollEl: scroll, rects };
+      return { sideEl: side, scrollEl: scroll, rects, svg, frame };
     }
 
     (results.pages || []).forEach(pg => {
@@ -879,6 +1013,8 @@
         pg.annotations, 'ann-rect', '', isTall, pg.content_frac || 1
       );
 
+      pg._newSvg = newSide.svg; pg._oldSvg = oldSide.svg; pg._newScroll = newSide.scrollEl; pg._oldScroll = oldSide.scrollEl;
+      newSide.frame._pg = pg;
       // Register annotations (pair old+new rects together)
       pg.annotations.forEach((ann, i) => {
         const idx = annRegistry.length;
@@ -901,6 +1037,7 @@
     });
 
     window._annRegistry = annRegistry;
+    window._builders = { buildPin, buildBox, svgEl };
 
     // Build reference list in sidebar (text annotations only — these carry the numbers)
     const listEl = document.getElementById('ann-list');
@@ -1022,7 +1159,7 @@
   function buildAnnItem(entry, idx) {
     const a = entry.ann;
     const group = groupOf(idx);
-    const extra = group.slice(1);
+    const extra = group.slice(1).filter(m => m.e.ann.type !== 'Square');     // second pins (a box is not a 'place')
     const item = document.createElement('div');
     item.className = 'ann-item';
     item.dataset.idx = idx;
@@ -1043,12 +1180,12 @@
     item.innerHTML = `
       <button type="button" class="ann-head" aria-expanded="false" aria-controls="${bodyId}">
         <span class="num-dot${String(a.number).length > 2 ? ' n3' : ''}">${esc(a.number)}</span>
-        ${extra.length ? `<span class="loc-chip">${group.length} places</span>` : ''}
+        ${extra.length ? `<span class="loc-chip">${extra.length + 1} places</span>` : ''}
         <span class="badge ann-status"></span>
         <svg class="ann-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg>
       </button>
       <div class="ann-body" id="${bodyId}" hidden>
-        ${a.content ? `<div class="dc-content">${esc(a.content)}</div>` : ''}
+        <textarea class="dc-edit" rows="1" aria-label="Reference text" placeholder="Type the reference for this spot…">${esc(a.content)}</textarea>
         <div class="dc-row"><span>Page</span><span>${esc(entry.pg.page_num)}</span></div>
         <div class="dc-row"><span>Author</span><span>${esc(a.author || '—')}</span></div>
         <div class="dc-row"><span>Confidence</span><span>${esc(a.confidence)}</span></div>
@@ -1061,6 +1198,12 @@
           <button type="button" class="act-btn act-remove">Remove</button>
         </div>
       </div>`;
+    const ta = item.querySelector('.dc-edit');
+    const origText = a.content || '';
+    ta.addEventListener('input', () => {
+      a.content = ta.value; autosize(ta);
+      if (!a.isNew) { if (ta.value === origText) contentEdits.delete(a.index); else contentEdits.set(a.index, ta.value); updateConfirmButton(); }
+    });
     item.querySelector('.ann-head').addEventListener('click', () => toggleItem(idx));
     item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
     item.querySelector('.act-reset').addEventListener('click', () => resetPosition(idx));
@@ -1086,7 +1229,7 @@
     group.forEach(m => {
       const st = memberState(m.e);
       if (worst === null || RANK[st] > RANK[worst]) worst = st;
-      if (m.e.newRectEl && m.e.newRectEl.classList.contains('ann-mark')) {
+      if (m.e.newRectEl && (m.e.newRectEl.classList.contains('ann-mark') || m.e.newRectEl.classList.contains('ann-box'))) {
         STATES.forEach(c => m.e.newRectEl.classList.remove(c)); m.e.newRectEl.classList.add(st);
       }
     });
@@ -1111,9 +1254,10 @@
     });
     item.querySelector('.act-reset').hidden = !(dotOverrides.has(a.index) || sideOverrides.has(a.index)) || removed;
     item.querySelector('.act-flip').style.display = removed ? 'none' : '';
-    item.querySelector('.act-flip').textContent = group.length > 1 ? `⇄ Flip pin ${a.number}` : '⇄ Flip pin side';
+    const pinsN = group.filter(m => m.e.ann.type !== 'Square').length, hasBox = group.some(m => m.e.ann.type === 'Square');
+    item.querySelector('.act-flip').textContent = pinsN > 1 ? `⇄ Flip pin ${a.number}` : '⇄ Flip pin side';
     const rm = item.querySelector('.act-remove');
-    rm.textContent = removed ? 'Restore' : (group.length > 1 ? 'Remove both' : 'Remove');
+    rm.textContent = removed ? 'Restore' : (pinsN > 1 ? 'Remove both' : hasBox ? 'Remove pin & box' : 'Remove');
     rm.classList.toggle('secondary', removed);
   }
 
@@ -1124,6 +1268,7 @@
       el.classList.toggle('open', on);
       el.querySelector('.ann-body').hidden = !on;
       el.querySelector('.ann-head').setAttribute('aria-expanded', on ? 'true' : 'false');
+      if (on) { const ta = el.querySelector('.dc-edit'); if (ta) autosize(ta); }
     });
   }
 
@@ -1171,6 +1316,165 @@
     return (window._annRegistry || []).findIndex(e => e.ann.index === annIndex);
   }
 
+  // Numbers follow placement: reading order of the pins (page, row, left-to-right) — the same
+  // rule the export uses (number_key in remapper.py). Runs after every move / reset.
+  function renumber() {
+    const reg = window._annRegistry || [];
+    const prim = reg.filter(e => e.ann.number != null && e.ann.parent_index == null && e.ann.num_x != null);
+    const keyOf = e => {
+      const p = dotOverrides.get(e.ann.index) || [e.ann.num_x, e.ann.num_y];
+      const y = p[1] * e.pg.height, x = p[0] * e.pg.width;
+      return [e.pg.new_page_num || e.pg.page_num, Math.floor(y / 20), x];
+    };
+    const sorted = prim.map(e => ({ e, k: keyOf(e) })).sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.k[2] - b.k[2]);
+    const newNum = new Map(sorted.map((o, i) => [o.e.ann.index, i + 1]));
+    let changed = 0;
+    reg.forEach(e => {
+      if (e.ann.type === 'Square') return;
+      const pk = e.ann.parent_index != null ? e.ann.parent_index : e.ann.index;
+      const n = newNum.get(pk);
+      if (n == null || n === e.ann.number) return;
+      e.ann.number = n; changed++;
+      if (e.newRectEl && e.newRectEl._setLabel) e.newRectEl._setLabel();
+    });
+    if (!changed) return;
+    const listEl = document.getElementById('ann-list');
+    sorted.forEach(o => {
+      const idx = reg.indexOf(o.e);
+      const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
+      if (!item) return;
+      const nd = item.querySelector('.num-dot');
+      nd.textContent = o.e.ann.number; nd.classList.toggle('n3', String(o.e.ann.number).length > 2);
+      item.querySelectorAll('.loc-name b').forEach(b => {
+        const row = b.closest('.loc-row'); const ci = row && reg[Number(row.dataset.loc)];
+        if (ci) b.textContent = ci.ann.number + (ci.ann.sub_label || '');
+      });
+      listEl.appendChild(item);                 // re-append in order; open/closed state is kept
+      refreshItem(item, o.e);
+    });
+    toast('Pin numbers updated to match placement');
+    setTimeout(() => { const t = document.getElementById('toast'); if (t && t.textContent.startsWith('Pin numbers')) t.classList.remove('show'); }, 2500);
+  }
+
+
+  // ── Boxes: draw a rough rectangle, it shrink-wraps to the content; move / resize / remove ──────────
+  function setDrawMode(on) {
+    drawMode = on;
+    const panel = document.getElementById('pages-panel');
+    panel.classList.toggle('drawing', on);
+    const b = document.getElementById('draw-btn');
+    if (b) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    const t = document.getElementById('toast');
+    if (on) toast('Drag on the Updated page to box text or artwork. It snaps to the content. Esc to stop.');
+    else if (t && t.textContent.startsWith('Drag on the Updated')) t.classList.remove('show');
+  }
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && drawMode) setDrawMode(false); });
+
+  (function initDrawing() {
+    const panel = document.getElementById('pages-panel');
+    let d = null;
+    const clampP = (p, vb) => ({ x: Math.max(0, Math.min(p.x, vb.width)), y: Math.max(0, Math.min(p.y, vb.height)) });
+    panel.addEventListener('pointerdown', ev => {
+      if (!drawMode || (ev.button !== undefined && ev.button !== 0)) return;
+      const frame = ev.target.closest && ev.target.closest('.page-frame');
+      if (!frame || !frame._pg) return;
+      const pg = frame._pg, svg = pg._newSvg;
+      const toSvg = e => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
+      const vb = svg.viewBox.baseVal;
+      const p0 = clampP(toSvg(ev), vb);
+      const r = window._builders.svgEl('rect', { 'class': 'ann-drawing', x: p0.x, y: p0.y, width: 0, height: 0 });
+      svg.appendChild(r);
+      d = { pg, svg, p0, r, toSvg, vb, frame };
+      try { frame.setPointerCapture(ev.pointerId); } catch (e) {}
+      ev.preventDefault();
+    });
+    panel.addEventListener('pointermove', ev => {
+      if (!d) return;
+      const p = clampP(d.toSvg(ev), d.vb);
+      d.r.setAttribute('x', Math.min(p.x, d.p0.x)); d.r.setAttribute('y', Math.min(p.y, d.p0.y));
+      d.r.setAttribute('width', Math.abs(p.x - d.p0.x)); d.r.setAttribute('height', Math.abs(p.y - d.p0.y));
+    });
+    const finish = async ev => {
+      if (!d) return;
+      const cur = d; d = null;
+      try { cur.frame.releasePointerCapture(ev.pointerId); } catch (e) {}
+      const x = +cur.r.getAttribute('x'), y = +cur.r.getAttribute('y'), w = +cur.r.getAttribute('width'), h = +cur.r.getAttribute('height');
+      const pg = cur.pg;
+      if (ev.type === 'pointercancel' || w < cur.vb.width * 0.02 || h < cur.vb.width * 0.012) { cur.r.remove(); return; }   // a click, not a box
+      let rc = [x / pg.width, y / pg.height, w / pg.width, h / pg.height];
+      cur.r.setAttribute('class', 'ann-drawing snapping');
+      try {
+        const res = await fetch('/tighten/' + currentJobId, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ page: pg.new_page_num || pg.page_num, rect: rc }) });
+        if (res.ok) { const j = await res.json(); if (j.rect && j.rect.every(Number.isFinite)) rc = j.rect; }
+      } catch (e) {}
+      cur.r.remove();
+      addDrawnBox(pg, rc);
+    };
+    panel.addEventListener('pointerup', finish);
+    panel.addEventListener('pointercancel', finish);
+  })();
+
+  function addDrawnBox(pg, rc) {
+    const reg = window._annRegistry, B = window._builders;
+    if (!reg || !B) return;
+    const seq = ++newBoxSeq, boxIdx = 100000 + seq * 2, pinIdx = boxIdx + 1;
+    const vbW = pg.width, vbH = pg.height, cf = pg.content_frac || 1;
+    const [fx, fy, fw, fh] = rc;
+    const base = { page: pg.page_num, status: 'moved', author: '', confidence: '100%', method: 'position',
+                   note: 'Box added in the review page.', old_x: 0, old_y: 0, old_w: 0, old_h: 0, isNew: true, sub_label: '', placed: true };
+    const boxAnn = { ...base, index: boxIdx, type: 'Square', content: '', number: null, parent_index: pinIdx,
+                     x: fx, y: fy, w: fw, h: fh, num_x: null, num_y: null, dot_x: null, dot_y: null };
+    const pinAnn = { ...base, index: pinIdx, type: 'FreeText', content: '', number: 99999, parent_index: null,
+                     x: fx + fw, y: fy, w: 0.004, h: 0.004, num_x: fx + fw, num_y: fy, dot_x: fx + fw, dot_y: fy, pin_side: 1 };
+    const boxEl = B.buildBox(pg._newSvg, boxAnn, vbW, vbH, cf);
+    const pinEl = B.buildPin(pg._newSvg, pinAnn, vbW, vbH, cf);
+    pinEl._setZoom(zoomLevel());
+    const ghost = svg => { const e = B.svgEl('rect', { 'class': 'ann-mark-hidden', width: 1, height: 1 }); svg.appendChild(e); return e; };
+    const mk = (ann, el) => ({ oldRectEl: ghost(pg._oldSvg), newRectEl: el, oldScrollEl: pg._oldScroll, newScrollEl: pg._newScroll, ann, pg });
+    const pinIdxReg = reg.length;
+    reg.push(mk(pinAnn, pinEl)); reg.push(mk(boxAnn, boxEl));
+    [pinIdxReg, pinIdxReg + 1].forEach(i => { const h = () => selectAnnotation(i); reg[i].newRectEl.addEventListener('click', h); });
+
+    const listEl = document.getElementById('ann-list');
+    document.getElementById('ann-list-header').style.display = '';
+    const item = buildAnnItem(reg[pinIdxReg], pinIdxReg);
+    listEl.appendChild(item);
+    renumber();
+    updateFilters(); updateConfirmButton();
+    selectAnnotation(pinIdxReg);
+    const ta = item.querySelector('.dc-edit');
+    if (ta) setTimeout(() => ta.focus(), 50);
+  }
+
+  // A box was moved / resized. Drawn boxes carry their pin to the top-right corner; carried-over boxes are recorded as edits.
+  function onBoxChanged(annIndex, fr) {
+    const reg = window._annRegistry || [];
+    const idx = registryIdxByAnn(annIndex), entry = reg[idx];
+    if (!entry) return;
+    const a = entry.ann;
+    a.x = fr[0]; a.y = fr[1]; a.w = fr[2]; a.h = fr[3];
+    if (a.parent_index != null) {
+      const pe = reg[registryIdxByAnn(a.parent_index)];
+      if (pe) {
+        const px = fr[0] + fr[2], py = fr[1];
+        pe.ann.num_x = px; pe.ann.num_y = py; pe.ann.dot_x = px; pe.ann.dot_y = py;
+        const g = pe.newRectEl;
+        g._orig = { px: px * pe.pg.width, py: py * pe.pg.height };
+        if (!dotOverrides.has(pe.ann.index)) g._setPos(g._orig.px, g._orig.py);     // a hand-placed pin stays where it is
+      }
+    } else {
+      boxEdits.set(annIndex, fr);
+      const el = entry.newRectEl;
+      if (el) { el.classList.remove('needs_look', 'content_removed'); el.classList.add('reviewed'); }
+    }
+    renumber();
+    if (a.parent_index != null) refreshGroup(idx);
+    updateConfirmButton();
+  }
+
+  function autosize(ta) { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
+
   function onMarkerMoved(annIndex, xf, yf) {
     const idx = registryIdxByAnn(annIndex);
     const entry = (window._annRegistry || [])[idx];
@@ -1178,6 +1482,7 @@
     dotOverrides.set(annIndex, [xf, yf]);
     // Placing a dot by hand is a human confirmation: mark it reviewed
     if (!reviewedIndices.has(annIndex)) { reviewedIndices.add(annIndex); entry.autoReviewed = true; }
+    renumber();
     refreshGroup(idx);
     updateConfirmButton();
   }
@@ -1201,6 +1506,7 @@
     dotOverrides.delete(entry.ann.index);
     sideOverrides.delete(entry.ann.index);
     if (entry.autoReviewed) { reviewedIndices.delete(entry.ann.index); entry.autoReviewed = false; }
+    renumber();
     refreshGroup(idx);
     updateConfirmButton();
   }
@@ -1223,9 +1529,21 @@
         if (m.e.oldRectEl) m.e.oldRectEl.style.display = 'none';
       }
     });
+    group.forEach(m => {                        // a removed box stays as a faint ghost so it can be restored
+      if (m.e.ann.type === 'Square' && m.e.newRectEl) { m.e.newRectEl.style.display = ''; m.e.newRectEl.classList.toggle('deleted', !restoring); }
+    });
     if (!restoring) clearActiveRects();
     refreshGroup(idx);
     updateConfirmButton();
+  }
+
+  function newBoxPayload() {
+    const reg = window._annRegistry || [];
+    return reg.filter(e => e.ann.isNew && e.ann.type === 'Square' && !deletedIndices.has(e.ann.index)).map(e => {
+      const pe = reg[registryIdxByAnn(e.ann.parent_index)];
+      return pe ? { index: e.ann.index, pin_index: pe.ann.index, page: e.pg.new_page_num || e.pg.page_num,
+                    box: [e.ann.x, e.ann.y, e.ann.w, e.ann.h], pin: [pe.ann.num_x, pe.ann.num_y], content: pe.ann.content || '' } : null;
+    }).filter(Boolean);
   }
 
   function updateConfirmButton() {
@@ -1234,8 +1552,10 @@
     const hint = document.getElementById('confirm-hint');
     const primaryOf = k => { const e = (window._annRegistry || []).find(x => x.ann.index === k); return e && e.ann.parent_index != null ? e.ann.parent_index : k; };
     const nDel = new Set([...deletedIndices].map(primaryOf)).size;
-    const nMoved = new Set([...dotOverrides.keys(), ...sideOverrides.keys()].filter(k => !deletedIndices.has(k))).size;   // pins repositioned
-    if (nDel === 0 && nMoved === 0) {
+    const nMoved = new Set([...dotOverrides.keys(), ...sideOverrides.keys(), ...boxEdits.keys()].filter(k => !deletedIndices.has(k))).size;   // pins / boxes repositioned
+    const nNew = (window._annRegistry || []).filter(e => e.ann.isNew && e.ann.type === 'Square' && !deletedIndices.has(e.ann.index)).length;
+    const nText = [...contentEdits.keys()].filter(k => !deletedIndices.has(k)).length;
+    if (nDel === 0 && nMoved === 0 && nNew === 0 && nText === 0) {
       label.textContent = 'Download PDF';
       hint.textContent = '';
     } else {
@@ -1243,6 +1563,8 @@
       const parts = [];
       if (nDel) parts.push(`${nDel} removed`);
       if (nMoved) parts.push(`${nMoved} repositioned`);
+      if (nNew) parts.push(`${nNew} box${nNew === 1 ? '' : 'es'} added`);
+      if (nText) parts.push(`${nText} edited`);
       hint.textContent = parts.join(' · ');
     }
   }
@@ -1262,11 +1584,12 @@
     const fail = msg => { toast(msg); btn.disabled = false; updateConfirmButton(); };
 
     try {
-      if (deletedIndices.size > 0 || dotOverrides.size > 0 || sideOverrides.size > 0) {
+      if (deletedIndices.size > 0 || dotOverrides.size > 0 || sideOverrides.size > 0 || boxEdits.size > 0 || contentEdits.size > 0 || newBoxPayload().length > 0) {
         const res = await fetch(`/confirm/${currentJobId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deleted_indices: [...deletedIndices], positions: Object.fromEntries(dotOverrides), sides: Object.fromEntries(sideOverrides) })
+          body: JSON.stringify({ deleted_indices: [...deletedIndices], positions: Object.fromEntries(dotOverrides), sides: Object.fromEntries(sideOverrides),
+          boxes: Object.fromEntries(boxEdits), edits: Object.fromEntries(contentEdits), new_boxes: newBoxPayload() })
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
@@ -1309,6 +1632,8 @@
     reviewedIndices = new Set();
     dotOverrides.clear();
     sideOverrides.clear();
+    boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0;
+    if (drawMode) setDrawMode(false);
     document.getElementById('ann-list').innerHTML = '';
     document.getElementById('ann-list-header').style.display = 'none';
     document.getElementById('confirm-btn-label').textContent = 'Download PDF';

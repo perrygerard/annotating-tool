@@ -131,13 +131,26 @@ def text_exists_anywhere(doc: fitz.Document, fingerprint_text: str, key_words: l
         for window in [4, 3, 2]:
             for i in range(len(words) - window + 1):
                 phrase = " ".join(words[i:i+window])
-                if len(phrase) >= 6 and page.search_for(phrase):
+                if len(phrase) >= 6 and _search(page, phrase):
                     return True
         # Keyword fallback
-        hits = sum(1 for kw in key_words[:6] if page.search_for(kw))
+        hits = sum(1 for kw in key_words[:6] if _search(page, kw))
         if hits >= min(3, len(key_words)):
             return True
     return False
+
+
+_TP_CACHE = {}
+
+
+def _search(page, needle):
+    """page.search_for with the page's text extracted once (search_for alone re-parses the page on every call,
+    which dominates the run time on big pages)."""
+    key = (id(page.parent), page.number)
+    ent = _TP_CACHE.get(key)
+    if ent is None:
+        ent = _TP_CACHE[key] = (page, page.get_textpage())     # keep the page alive: a textpage only holds a weak reference to it
+    return ent[0].search_for(needle, quads=False, textpage=ent[1])
 
 
 def find_text_in_page(page: fitz.Page, fingerprint_text: str, key_words: list,
@@ -161,14 +174,14 @@ def find_text_in_page(page: fitz.Page, fingerprint_text: str, key_words: list,
             phrase = " ".join(words[i:i+window])
             if len(phrase) < 8:
                 continue
-            hits = page.search_for(phrase, quads=False)
+            hits = _search(page, phrase)
             if hits:
                 score = window / max(len(words), window)
                 # Boost if context words appear nearby
                 if context_before or context_after:
                     ctx_words = (context_before + " " + context_after).split()
                     ctx_key = [w for w in ctx_words if len(w) >= 4][:6]
-                    nearby_hits = sum(1 for cw in ctx_key if page.search_for(cw))
+                    nearby_hits = sum(1 for cw in ctx_key if _search(page, cw))
                     if ctx_key:
                         score += 0.15 * (nearby_hits / len(ctx_key))
                 score = min(score, 1.0)
@@ -184,7 +197,7 @@ def find_text_in_page(page: fitz.Page, fingerprint_text: str, key_words: list,
     # Keyword cluster fallback
     hit_rects = []
     for word in key_words[:10]:
-        hits = page.search_for(word)
+        hits = _search(page, word)
         if hits:
             hit_rects.extend(hits)
 
@@ -796,6 +809,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     old_doc = fitz.open(old_pdf_path)
     new_doc = fitz.open(new_pdf_path)
     strip_pin_text(old_doc)       # no-op unless old_pdf is itself a Carryover export
+    _TP_CACHE.clear()
 
     results = {
         "total": 0,
@@ -1016,6 +1030,11 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     # Match the pixels around each annotation's referenced point, per annotation.
     tip_matches = compute_tip_matches(old_doc, new_doc, all_annots, page_is_image,
                                       ANNOT_FREETEXT, ANNOT_SQUARE)
+    # Text pages are matched by their words, which can be unreliable (garbled or sparse text layers, or
+    # a spot with little text). Cross-check them visually and trust a near-certain pixel match over a weak text one.
+    text_annots = [a for a in all_annots if not page_is_image.get(a.page_num, False)]
+    text_visual = (compute_tip_matches(old_doc, new_doc, text_annots, {a.page_num: True for a in text_annots},
+                                       ANNOT_FREETEXT, ANNOT_SQUARE) if text_annots else {})
 
     # ── 3. Match each annotation in the new doc ───────────────────────────────
     for info in all_annots:
@@ -1193,6 +1212,21 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
                 info.new_rect = fitz.Rect(info.rect)
                 info.new_vertices = list(info.vertices)
 
+        vt = text_visual.get(info.index)
+        if (vt is not None and vt["confident"] and vt["score"] >= 0.9 and info.match_method != "visual"
+                and (not info.matched or info.match_confidence < 0.95)):
+            dx, dy = vt["shift"]
+            if info.status == "content_removed" and info.parent_index is None:
+                results["content_removed"] -= 1
+            info.matched = True
+            info.match_confidence = vt["score"]
+            info.status = "moved"
+            info.match_method = "visual"
+            info.match_note = vt["note"] + " (text match was weak)"
+            info.new_rect = apply_offset(info.rect, fitz.Point(dx, dy))
+            info.new_vertices = [(v[0] + dx, v[1] + dy) for v in info.vertices]
+            info.new_page_num = vt["page"]
+
         # Low-confidence matches also need a look
         if info.matched and info.match_confidence < 0.4:
             info.status = "needs_look"
@@ -1305,6 +1339,9 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path):
                 "old_y": old_coords["y"],
                 "old_w": old_coords["w"],
                 "old_h": old_coords["h"],
+                "placed": info.new_rect is not None,
+                "num_x": _anchor_point(info)[0] / tot_w,
+                "num_y": _anchor_point(info)[1] / ph,
                 "dot_x": dot_xy[0] if dot_xy else None,
                 "dot_y": dot_xy[1] if dot_xy else None,
                 "pin_side": pin_side,
@@ -1460,15 +1497,29 @@ def _anchor_point(info):
     return (r.x0 + r.width / 2, r.y0 + r.height / 2)
 
 
-def assign_numbers(all_annots):
-    """Give every text (FreeText) annotation a stable global number in reading
-    order (page, then top-to-bottom, left-to-right by dot position). A callout's
-    extra arrow targets share its number. Rectangles get no number.
-    Returns {annot.index: number}."""
+NUM_BAND = 20.0     # pins within 20pt vertically count as one row (then left-to-right)
+
+
+def number_key(page, x, y):
+    """Reading order of a pin: page, then row, then left-to-right. The review screen uses the
+    same formula (renumber() in index.html), so what you see is what gets exported."""
+    return (page, math.floor(y / NUM_BAND), x)
+
+
+def assign_numbers(all_annots, pos=None):
+    """Give every text (FreeText) annotation a number in reading order of where its pin is.
+    pos: {annot.index: (x_pt, y_pt)} for pins the user moved (points on the output page);
+    others use their referenced spot. A callout's extra arrow targets share its number.
+    Rectangles get no number. Returns {annot.index: number}."""
+    pos = pos or {}
     numbered = [a for a in all_annots
                 if a.annot_type[0] == ANNOT_FREETEXT and a.new_rect is not None
                 and a.parent_index is None]
-    numbered.sort(key=lambda a: (_out_page(a), round(_anchor_point(a)[1] / 20), _anchor_point(a)[0]))
+
+    def key(a):
+        x, y = pos.get(a.index) or _anchor_point(a)
+        return number_key(_out_page(a), x, y)
+    numbered.sort(key=key)
     nums = {a.index: n + 1 for n, a in enumerate(numbered)}
     for a in all_annots:
         if a.parent_index is not None and a.new_rect is not None and a.parent_index in nums:
@@ -1580,6 +1631,9 @@ def strip_pin_text(doc):
                 continue
         if not found:
             continue
+        for a in list(page.annots() or []):          # remove them first: redaction only deletes some, re-adding would duplicate
+            if a.info.get("subject") == CARRIER_SUBJECT:
+                page.delete_annot(a)
         for _, box, *_r in found:
             page.add_redact_annot(box)
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE,
@@ -1591,8 +1645,20 @@ def strip_pin_text(doc):
                 _make_carrier(page, box, verts[0], content, author, verts[-1])
 
 
+BOX_SUBJECT = "CarryoverBox"
+BOX_RED = (0.78, 0.2, 0.17)
+
+
+def _box_rect(info, boxes, pw_total, ph):
+    """Output rectangle of a box annotation: the user's edit (fractions of the output page) or the remapped one."""
+    if boxes and info.index in boxes:
+        fx, fy, fw, fh = boxes[info.index]
+        return fitz.Rect(fx * pw_total, fy * ph, (fx + fw) * pw_total, (fy + fh) * ph)
+    return fitz.Rect(info.new_rect)
+
+
 def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
-              overrides=None, draw_dots=True, sides=None):
+              overrides=None, draw_dots=True, sides=None, boxes=None):
     """Write annotations to a new PDF with a numbered reference sidebar.
 
     Each page is expanded rightward by SIDEBAR_W points. Annotations get:
@@ -1619,7 +1685,14 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
     # Only text (FreeText) annotations get a number/dot/sidebar entry.
     # Numbers are assigned over ALL annotations so they stay stable when the
     # user removes some (gaps are fine; references never shift).
-    num_by_index = assign_numbers(all_annots)
+    pos_pts = {}
+    for idx, (fx, fy) in overrides.items():
+        inf = next((i for i in all_annots if i.index == idx), None)
+        if inf is None or _out_page(inf) >= len(out_doc):
+            continue
+        pg = out_doc[_out_page(inf)].rect
+        pos_pts[idx] = (fx * (pg.width + SIDEBAR_BASE * _scale(pg.width)), fy * pg.height)
+    num_by_index = assign_numbers(all_annots, pos_pts)
     numbered = [info for info in active
                 if info.annot_type[0] == ANNOT_FREETEXT and info.index in num_by_index]
     numbered.sort(key=lambda a: num_by_index[a.index])
@@ -1744,7 +1817,39 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             if draw_dots:
                 _add_carrier(page, info, cx, cy, px, py, PIN_R, pins_on_page, global_num, _out_page(info))
 
-    # Rectangles are intentionally not written: the numbered dots replace them.
+    # Boxes (rectangles) are written as real, visible Square annotations: the next round reads them back
+    # like any rectangle (they are not page content, so they never disturb matching).
+    if draw_dots:
+        for info in active:
+            if info.annot_type[0] != ANNOT_SQUARE:
+                continue
+            pn = _out_page(info)
+            if pn >= len(out_doc):
+                continue
+            pg = out_doc[pn]
+            tot_w = pg.rect.width          # page already widened by the sidebar in the loop above
+            try:
+                pw_orig = float(out_doc.xref_get_key(pg.xref, "CPOrigW")[1])
+            except Exception:
+                pw_orig = tot_w
+            r = _box_rect(info, boxes, tot_w, pg.rect.height)
+            r = fitz.Rect(max(0, r.x0), max(0, r.y0), min(pw_orig, r.x1), min(pg.rect.height, r.y1))
+            if r.width < 2 or r.height < 2:
+                continue
+            try:
+                ann = pg.add_rect_annot(r)
+                col = (info.colors or {}).get("stroke") or BOX_RED
+                wd = (info.border or {}).get("width") or 2
+                ann.set_colors(stroke=col)
+                ann.set_border(width=max(1, wd))
+                inf = ann.info
+                inf["subject"] = BOX_SUBJECT
+                if info.author:
+                    inf["title"] = info.author
+                ann.set_info(inf)
+                ann.update()
+            except Exception:
+                pass
 
     out_doc.save(output_path, garbage=4, deflate=True)
     out_doc.close()

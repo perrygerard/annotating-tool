@@ -5,7 +5,10 @@ import time
 import fitz  # PyMuPDF
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
-from remapper import process_pdfs, write_pdf
+import dataclasses
+import remapper as _R
+from remapper import process_pdfs, write_pdf, AnnotationInfo, ANNOT_FREETEXT, ANNOT_SQUARE
+import boxsnap
 from placer import place_references
 
 app = Flask(__name__)
@@ -208,6 +211,75 @@ def download(job_id):
                      mimetype="application/pdf")
 
 
+def _effective_annots(all_annots, pdf_path, edits, new_boxes, overrides):
+    """The annotation list for this export: stored annotations (with any text edits, on copies so a later
+    export can undo them) plus the boxes the user drew in the review page. New pins go into `overrides`
+    so they are drawn exactly where they were placed."""
+    eff = [dataclasses.replace(a, content=edits[a.index]) if a.index in edits else a for a in all_annots]
+    if not new_boxes:
+        return eff
+    doc = fitz.open(pdf_path)
+    try:
+        for nb in new_boxes:
+            try:
+                pn = int(nb["page"]) - 1
+                bi, pi = int(nb["index"]), int(nb["pin_index"])
+                fx, fy, fw, fh = [float(v) for v in nb["box"]]
+                px, py = [float(v) for v in nb["pin"]]
+                page = doc[pn]
+            except (KeyError, ValueError, TypeError, IndexError):
+                continue
+            pw, ph = page.rect.width, page.rect.height
+            tot_w = pw + _R.SIDEBAR_BASE * _R._scale(pw)
+            fx, fy = max(0.0, min(1.0, fx)), max(0.0, min(1.0, fy))
+            box = fitz.Rect(fx * tot_w, fy * ph, min(pw, (fx + fw) * tot_w), min(ph, (fy + fh) * ph + 0))
+            tx, ty = px * tot_w, py * ph
+            content = str(nb.get("content") or "")[:5000]
+            sq = AnnotationInfo(index=bi, page_num=pn, annot_type=(ANNOT_SQUARE, "Square"), rect=fitz.Rect(box),
+                                content="", vertices=[], flags=0, colors={}, border={})
+            sq.new_rect = fitz.Rect(box); sq.new_page_num = pn; sq.status = "moved"; sq.matched = True
+            pin_rect = fitz.Rect(tx - 6, ty - 6, tx + 6, ty + 6)
+            pin = AnnotationInfo(index=pi, page_num=pn, annot_type=(ANNOT_FREETEXT, "FreeText"), rect=pin_rect,
+                                 content=content, vertices=[(tx, ty), (tx + 30, ty - 20)], flags=0, colors={}, border={})
+            pin.tip_point = fitz.Point(tx, ty)
+            pin.new_rect = pin_rect; pin.new_vertices = [(tx, ty), (tx + 30, ty - 20)]
+            pin.new_page_num = pn; pin.status = "moved"; pin.matched = True
+            eff += [sq, pin]
+            overrides.setdefault(pi, (px, py))
+    finally:
+        doc.close()
+    return eff
+
+
+@app.route("/tighten/<job_id>", methods=["POST"])
+def tighten_box(job_id):
+    """Shrink a roughly drawn box to the content inside it. Body: {page, rect:[x,y,w,h]} as fractions of the output page."""
+    job = jobs.get(job_id)
+    if not job or job["status"] != "done":
+        return jsonify({"error": "Job not ready"}), 404
+    data = request.get_json(silent=True) or {}
+    path = job.get("new_pdf_path")
+    try:
+        pn = int(data["page"])
+        fx, fy, fw, fh = [float(v) for v in data["rect"]]
+    except (KeyError, ValueError, TypeError):
+        return jsonify({"error": "Bad request"}), 400
+    if not path or not os.path.exists(path):
+        return jsonify({"error": "Source PDF no longer available"}), 500
+    try:
+        doc = fitz.open(path)
+        page = doc[pn - 1]
+        pw, ph = page.rect.width, page.rect.height
+        doc.close()
+        tot_w = pw + _R.SIDEBAR_BASE * _R._scale(pw)
+        rect = fitz.Rect(fx * tot_w, fy * ph, (fx + fw) * tot_w, (fy + fh) * ph)
+        tight, changed = boxsnap.tighten(path, pn, rect)
+        return jsonify({"rect": [tight.x0 / tot_w, tight.y0 / ph, tight.width / tot_w, tight.height / ph],
+                        "changed": bool(changed)})
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/confirm/<job_id>", methods=["POST"])
 def confirm(job_id):
     """Re-write the output PDF with user-deleted annotations removed.
@@ -235,12 +307,31 @@ def confirm(job_id):
             fx, fy = float(v[0]), float(v[1])
         except (ValueError, TypeError, IndexError):
             continue
-        if 0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0:
-            overrides[idx] = (fx, fy)
+        if fx == fx and fy == fy:                       # not NaN; a pin point dragged a hair past the edge is clamped
+            overrides[idx] = (min(1.0, max(0.0, fx)), min(1.0, max(0.0, fy)))
 
     all_annots = job.get("_all_annots")
     new_pdf_path = job.get("new_pdf_path") or job.get("annotated_path")
     output_path = job.get("output_path")
+
+    def _fracs(v, n):
+        try:
+            vals = [float(x) for x in v]
+        except (ValueError, TypeError):
+            return None
+        return vals if len(vals) == n and all(x == x for x in vals) else None
+    # Edited boxes: { "<annotation index>": [x, y, w, h] } as fractions of the output page
+    boxes = {}
+    for k, v in (data.get("boxes") or {}).items():
+        f = _fracs(v, 4)
+        if f and str(k).lstrip("-").isdigit():
+            boxes[int(k)] = tuple(f)
+    # Edited reference text: { "<annotation index>": "text" }
+    edits = {}
+    for k, v in (data.get("edits") or {}).items():
+        if str(k).lstrip("-").isdigit() and isinstance(v, str):
+            edits[int(k)] = v[:5000]
+    new_boxes = data.get("new_boxes") or []
 
     if not all_annots or not new_pdf_path or not output_path:
         return jsonify({"error": "Job data missing — please re-process"}), 500
@@ -249,7 +340,8 @@ def confirm(job_id):
         return jsonify({"error": "Source PDF no longer available — please re-process"}), 500
 
     try:
-        write_pdf(all_annots, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides, sides=sides)
+        eff = _effective_annots(all_annots, new_pdf_path, edits, new_boxes, overrides)
+        write_pdf(eff, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides, sides=sides, boxes=boxes)
         # Update the results annotation list to reflect deletions
         results = job["results"]
         results["annotations"] = [

@@ -30,9 +30,10 @@ REMOVED_BELOW = 0.50       # below this the referenced content is treated as gon
 MIN_TEXTURE = 8.0          # patch std-dev; flatter patches carry no signal
 
 
-def _render_gray(page):
+def _render_gray(page, scale=None):
     """Render a page to grayscale WITHOUT annotations. Returns (array, scale)."""
-    scale = min(1.0, TARGET_PX_W / page.rect.width) if page.rect.width > TARGET_PX_W else 1.0
+    if scale is None:
+        scale = min(1.0, TARGET_PX_W / page.rect.width) if page.rect.width > TARGET_PX_W else 1.0
     pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), annots=False,
                           alpha=False, colorspace=fitz.csGRAY)
     arr = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width).copy()
@@ -155,10 +156,15 @@ def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
             old_cache[pn] = _render_gray(old_doc[pn])
         return old_cache[pn]
 
-    def new_render(pn):
-        if pn not in new_cache:
-            new_cache[pn] = _render_gray(new_doc[pn])
-        return new_cache[pn]
+    def new_render(pn, old_s, q):
+        """New page rendered so content that is q x the old size (in points) shows at the same
+        pixel size as the old render. q=1: same artwork, page just re-cut (e.g. narrower);
+        q=new_w/old_w: the whole page was scaled."""
+        key = (pn, round(old_s, 5), round(q, 4))
+        if key not in new_cache:
+            sc = min(old_s / q, 3.0)
+            new_cache[key] = _render_gray(new_doc[pn], sc)
+        return new_cache[key]
 
     def home_page(old_pn):
         m = mapping.get(old_pn)
@@ -186,8 +192,21 @@ def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
         best = None
         flat = False
         for k, pn in enumerate(cands):
-            new_g, new_s = new_render(pn)
-            m = _match_one(old_g, old_s, new_g, new_s, old_pw, pt)
+            qs = [1.0]
+            wr = new_doc[pn].rect.width / old_pw
+            if abs(wr - 1.0) > 0.02:
+                qs.append(wr)        # page width differs: also try "whole page scaled"
+            m = None
+            for q in qs:
+                new_g, new_s = new_render(pn, old_s, q)
+                mq = _match_one(old_g, old_s, new_g, new_s, old_pw, pt)
+                if mq is None:
+                    m = None
+                    break
+                if m is None or mq["score"] > m["score"]:
+                    m = mq
+                if mq["score"] >= 0.9 and (mq["score"] - mq["second"]) >= MARGIN:
+                    break
             if m is None:
                 flat = True          # patch carries no signal (blank / tiny): same on every page
                 break
