@@ -87,11 +87,16 @@ def remap():
     annotated_file.save(annotated_path)
     new_file.save(new_path)
 
-    jobs[job_id] = {"status": "processing"}
+    jobs[job_id] = {"status": "processing", "percent": 0, "progress": "Uploaded - starting…"}
 
     def run_job():
         try:
-            results = process_pdfs(annotated_path, new_path, output_path)
+            def prog(pct, text):
+                j = jobs.get(job_id)
+                if j and j.get("status") == "processing":
+                    j["percent"] = round(pct, 1)
+                    j["progress"] = text
+            results = process_pdfs(annotated_path, new_path, output_path, prog)
             if not results.get("total"):
                 raise ValueError(
                     "No annotations were found in the first PDF. Upload the reviewer-annotated PDF (with live "
@@ -148,6 +153,7 @@ def place():
         job = jobs.get(job_id)
         if job and job.get("status") == "processing":
             job["progress"] = f"Reading page {done} of {total}…"
+            job["percent"] = round(85 * done / max(1, total), 1)
 
     def run_job():
         try:

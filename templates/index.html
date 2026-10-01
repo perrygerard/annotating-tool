@@ -85,6 +85,8 @@
     .progress-card h3 { font-family: var(--display); font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
     .progress-card p { font-size: 0.84rem; color: var(--ink-light); margin-bottom: 22px; }
     .progress-bar-wrap { background: var(--bench); border-radius: 99px; height: 6px; overflow: hidden; }
+    .progress-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.72rem; color: var(--ink-light); font-variant-numeric: tabular-nums; }
+    .progress-hint { margin-top: 10px; font-size: 0.74rem; color: var(--ink-light); min-height: 1.2em; }
     .progress-bar { height: 100%; background: var(--ink); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
 
     /* ── Results screen ── */
@@ -427,10 +429,12 @@
 <div id="progress-screen">
   <div class="progress-card">
     <h3 id="progress-title">Matching callouts to the new pages…</h3>
-    <p id="progress-detail">Large PDFs can take up to a minute.</p>
+    <p id="progress-detail">Large PDFs can take a few minutes.</p>
     <div class="progress-bar-wrap">
       <div class="progress-bar" id="progress-bar"></div>
     </div>
+    <div class="progress-meta"><span id="progress-pct">0%</span><span id="progress-elapsed"></span></div>
+    <p class="progress-hint" id="progress-hint"></p>
   </div>
 </div>
 
@@ -554,23 +558,44 @@
 
     document.getElementById('upload-screen').style.display = 'none';
     document.getElementById('progress-screen').style.display = 'flex';
-    progressVal = 30;
-    document.getElementById('progress-bar').style.width = '30%';
+    const titleEl = document.getElementById('progress-title'), detailEl = document.getElementById('progress-detail');
+    const barEl = document.getElementById('progress-bar'), pctEl = document.getElementById('progress-pct');
+    const elapsedEl = document.getElementById('progress-elapsed'), hintEl = document.getElementById('progress-hint');
+    const baseTitle = cfg.title;
+    const setBar = p => { p = Math.max(0, Math.min(100, p)); barEl.style.width = p + '%'; pctEl.textContent = Math.round(p) + '%'; };
+    const t0 = Date.now();
+    const timer = setInterval(() => {                     // elapsed clock + reassurance, so a slow job never looks frozen
+      const s = Math.floor((Date.now() - t0) / 1000);
+      elapsedEl.textContent = 'Elapsed ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      hintEl.textContent = s > 45 ? 'Big files can take several minutes. Keep this tab open.' : '';
+    }, 1000);
+    titleEl.textContent = 'Uploading your PDFs…';
+    detailEl.textContent = 'Sending the files to the server';
+    setBar(0);
 
-    const timer = setInterval(() => {
-      if (progressVal < 85) { progressVal += Math.random() * 4; document.getElementById('progress-bar').style.width = progressVal + '%'; }
-      else clearInterval(timer);
-    }, 800);
-
+    let pollFails = 0;
     try {
-      const res = await fetch(cfg.endpoint, { method: 'POST', body: formData });
-      let data = {};
-      try { data = await res.json(); } catch (e) {}
+      const { status, data } = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', cfg.endpoint);
+        xhr.upload.onprogress = ev => {
+          if (!ev.lengthComputable) return;
+          setBar(100 * ev.loaded / ev.total);
+          detailEl.textContent = 'Sending the files to the server — ' + (ev.loaded / 1048576).toFixed(0) + ' of ' + (ev.total / 1048576).toFixed(0) + ' MB';
+        };
+        xhr.onload = () => { let d = {}; try { d = JSON.parse(xhr.responseText); } catch (e) {} resolve({ status: xhr.status, data: d }); };
+        xhr.onerror = () => reject(new Error('network'));
+        xhr.ontimeout = () => reject(new Error('timeout'));
+        xhr.send(formData);
+      });
+      const res = { ok: status >= 200 && status < 300, status };
       if (!res.ok) {
         clearInterval(timer);
         showUploadError(data.error || httpErrorMessage(res.status));
         return;
       }
+      titleEl.textContent = baseTitle; setBar(0);
+      detailEl.textContent = 'Starting…';
       currentJobId = data.job_id;
       pollInterval = setInterval(async () => {
         try {
@@ -580,17 +605,24 @@
             showUploadError('The server restarted while working on your files (this can happen with very large PDFs when it runs out of memory), so the job was lost. Please try again, or use smaller PDFs.');
             return;
           }
+          pollFails = 0;
           const d = await r.json();
           if (d.progress) document.getElementById('progress-detail').textContent = d.progress;
+          if (typeof d.percent === 'number') setBar(d.percent);
           if (d.status === 'done') {
             clearInterval(pollInterval); clearInterval(timer);
-            document.getElementById('progress-bar').style.width = '100%';
+            setBar(100);
             setTimeout(() => showResults(d.results), 400);
           } else if (d.status === 'error') {
             clearInterval(pollInterval); clearInterval(timer);
             showUploadError(d.message);
           }
-        } catch(e) {}
+        } catch(e) {
+          if (++pollFails >= 8) {
+            clearInterval(pollInterval); clearInterval(timer);
+            showUploadError('Lost contact with the server while it was working. It may have restarted or gone offline. Check your connection and try again.');
+          }
+        }
       }, 1500);
     } catch(e) {
       clearInterval(timer);

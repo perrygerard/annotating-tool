@@ -805,7 +805,18 @@ def copy_annot_metadata(src_info: dict, annot: fitz.Annot):
     annot.set_info(info)
 
 
-def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict:
+def _stage(progress, lo, hi, text):
+    """Progress callback for one stage of the pipeline: maps (done, total) onto the lo..hi percent range."""
+    if progress is None:
+        return None
+    def cb(done, total):
+        pct = lo + (hi - lo) * (done / max(1, total))
+        shown = min(done + 1, total)
+        progress(pct, f"{text} {shown} of {total}" if total > 1 else text)
+    return cb
+
+
+def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str, progress=None) -> dict:
     old_doc = fitz.open(old_pdf_path)
     new_doc = fitz.open(new_pdf_path)
     strip_pin_text(old_doc)       # no-op unless old_pdf is itself a Carryover export
@@ -826,7 +837,10 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
     all_annots = []
     next_index = 0
     line_annots = []
+    _read = _stage(progress, 0, 5, "Reading annotations — page")
     for page_num in range(len(old_doc)):
+        if _read:
+            _read(page_num, len(old_doc))
         page = old_doc[page_num]
         for i, annot in enumerate(page.annots()):
             atype = annot.type  # (int, name)
@@ -1013,7 +1027,10 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
     # ── 2. Detect content type per page (text vs image) ─────────────────────
     page_is_image = {}
+    _kind = _stage(progress, 5, 8, "Checking page types — page")
     for page_num in range(len(old_doc)):
+        if _kind:
+            _kind(page_num, len(old_doc))
         page_is_image[page_num] = is_image_page(old_doc[page_num])
 
     # ── 2b. Legacy page-wide removal boundary (only computed if a page needs it) ─
@@ -1028,16 +1045,24 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
 
     # ── 2c. Tip-anchored visual matching (image pages) ───────────────────────
     # Match the pixels around each annotation's referenced point, per annotation.
+    n_img = sum(1 for a in all_annots if page_is_image.get(a.page_num, False))
+    n_txt = len(all_annots) - n_img
+    split = 8 + 62 * (n_img / max(1, n_img + n_txt))
     tip_matches = compute_tip_matches(old_doc, new_doc, all_annots, page_is_image,
-                                      ANNOT_FREETEXT, ANNOT_SQUARE)
+                                      ANNOT_FREETEXT, ANNOT_SQUARE,
+                                      progress=_stage(progress, 8, split, "Matching pin positions — pin"))
     # Text pages are matched by their words, which can be unreliable (garbled or sparse text layers, or
     # a spot with little text). Cross-check them visually and trust a near-certain pixel match over a weak text one.
     text_annots = [a for a in all_annots if not page_is_image.get(a.page_num, False)]
     text_visual = (compute_tip_matches(old_doc, new_doc, text_annots, {a.page_num: True for a in text_annots},
-                                       ANNOT_FREETEXT, ANNOT_SQUARE) if text_annots else {})
+                                       ANNOT_FREETEXT, ANNOT_SQUARE,
+                                       progress=_stage(progress, split, 70, "Cross-checking pins — pin")) if text_annots else {})
 
     # ── 3. Match each annotation in the new doc ───────────────────────────────
-    for info in all_annots:
+    _loop = _stage(progress, 70, 76, "Placing pins — pin")
+    for _n, info in enumerate(all_annots):
+        if _loop:
+            _loop(_n, len(all_annots))
         key_words = extract_key_words(info.fingerprint_text) if info.fingerprint_text else []
         page_image_mode = page_is_image.get(info.page_num, False)
 
@@ -1253,13 +1278,13 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str) -> dict
             "parent_index": info.parent_index,
         })
 
-    results = _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path)
+    results = _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, progress)
     old_doc.close()
     new_doc.close()
     return results
 
 
-def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path):
+def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, progress=None):
     """Number the annotations, build the review-screen preview data and write the output PDFs.
     old_pdf_path may be None (adding references to a first-time layout: there is no 'before')."""
     num_by_index = assign_numbers(all_annots)
@@ -1366,10 +1391,14 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path):
     results["pages"] = pages_preview
 
     # ── 5. Write output PDF ───────────────────────────────────────────────────
-    write_pdf(all_annots, new_pdf_path, output_path, skip_indices=set())
+    if progress:
+        progress(78, "Building the review screen")
+    write_pdf(all_annots, new_pdf_path, output_path, skip_indices=set(),
+              progress=_stage(progress, 78, 90, "Writing the export — page"))
     # Preview copy WITHOUT page dots: the web view draws its own (draggable) markers
     preview_path = output_path[:-4] + "_preview.pdf" if output_path.endswith(".pdf") else output_path + "_preview"
-    write_pdf(all_annots, new_pdf_path, preview_path, skip_indices=set(), draw_dots=False)
+    write_pdf(all_annots, new_pdf_path, preview_path, skip_indices=set(), draw_dots=False,
+              progress=_stage(progress, 90, 99, "Preparing page previews — page"))
     results["_preview_path"] = preview_path
 
     # Store all_annots on results for use by confirm/re-write endpoint
@@ -1658,7 +1687,7 @@ def _box_rect(info, boxes, pw_total, ph):
 
 
 def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
-              overrides=None, draw_dots=True, sides=None, boxes=None):
+              overrides=None, draw_dots=True, sides=None, boxes=None, progress=None):
     """Write annotations to a new PDF with a numbered reference sidebar.
 
     Each page is expanded rightward by SIDEBAR_W points. Annotations get:
@@ -1709,6 +1738,8 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
 
     # ── Expand pages and draw ────────────────────────────────────────────────
     for page_num in range(len(out_doc)):
+        if progress:
+            progress(page_num, len(out_doc))
         page = out_doc[page_num]
         orig_rect = page.rect
         pw = orig_rect.width

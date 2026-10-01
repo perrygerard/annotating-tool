@@ -141,7 +141,7 @@ def _match_one(old_g, old_s, new_g, new_s, old_pw, pt, x_drift_pt=20.0):
 
 
 def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
-                        ANNOT_FREETEXT, ANNOT_SQUARE):
+                        ANNOT_FREETEXT, ANNOT_SQUARE, progress=None):
     """Return {annot.index: result} for every annotation on an image page that
     has an anchor point. result keys: page, shift(dx,dy), score, second,
     confident, note."""
@@ -173,7 +173,10 @@ def compute_tip_matches(old_doc, new_doc, annots, page_is_image,
         return min(old_pn, len(new_doc) - 1)
 
     out = {}
-    for info in annots:
+    todo = [a for a in annots if page_is_image.get(a.page_num, False)]
+    for _n, info in enumerate(todo):
+        if progress:
+            progress(_n, len(todo))
         if not page_is_image.get(info.page_num, False):
             continue
         pt = anchor_for(info, ANNOT_FREETEXT, ANNOT_SQUARE)
