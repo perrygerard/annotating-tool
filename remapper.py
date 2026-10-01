@@ -1433,7 +1433,7 @@ def _scale(pw):
     return max(1.0, pw / 900.0)
 
 
-PIN_SCALE = 0.5   # page pins are half the size of the sidebar number dots
+PIN_SCALE = 1.0   # page pins are the same size as the sidebar number dots
 PIN_L = 2.0       # distance from the point to the body centre, in body radii (the stem is what shows of it)
 TIP_R = 0.26      # radius of the dot on the point, in body radii
 # Where the body sits relative to the point, in quarter turns: 0 = right (stem points left), 1 = below, 2 = left, 3 = above
@@ -1500,17 +1500,18 @@ def _pin_bbox(cx, cy, px, py, r):
 
 
 def _draw_pin(page, cx, cy, px, py, number, radius):
-    """Number in a ring on a short stem ending in a dot; the dot is the point, the ring sits at (cx,cy)."""
-    ink = (0.06, 0.06, 0.06)
-    sw = max(0.6, radius * 0.17)
-    page.draw_line(fitz.Point(px, py), fitz.Point(cx, cy), color=ink, width=sw)
-    page.draw_circle(fitz.Point(cx, cy), radius, color=ink, fill=(1, 1, 1), width=max(0.7, radius * 0.15))
-    page.draw_circle(fitz.Point(px, py), radius * TIP_R, color=None, fill=ink)
+    """Number in a red ring on a short stem ending in a dot; the dot is the point, the ring sits at (cx,cy).
+    Same red as the review boxes, white number."""
+    red = BOX_RED
+    sw = max(0.8, radius * 0.17)
+    page.draw_line(fitz.Point(px, py), fitz.Point(cx, cy), color=red, width=sw)
+    page.draw_circle(fitz.Point(px, py), radius * TIP_R, color=None, fill=red)
+    page.draw_circle(fitz.Point(cx, cy), radius, color=red, fill=red, width=0.5)
     label = str(number)
     fontsize = radius * {1: 1.1, 2: 0.85}.get(len(label), 0.65)
     tw = fitz.get_text_length(label, fontname="hebo", fontsize=fontsize)
     page.insert_text(fitz.Point(cx - tw / 2, cy + fontsize * 0.35), label,
-                     fontname="hebo", fontsize=fontsize, color=ink)
+                     fontname="hebo", fontsize=fontsize, color=(1, 1, 1))
 
 
 def _out_page(info):
@@ -1663,10 +1664,10 @@ def strip_pin_text(doc):
         for a in list(page.annots() or []):          # remove them first: redaction only deletes some, re-adding would duplicate
             if a.info.get("subject") == CARRIER_SUBJECT:
                 page.delete_annot(a)
-        for _, box, *_r in found:
+        for _, box, *_r in found:      # one pin per pass: overlapping neighbours' areas would otherwise keep each other's art
             page.add_redact_annot(fitz.Rect(box.x0 - 6, box.y0 - 6, box.x1 + 6, box.y1 + 6))  # MuPDF needs slack to treat the ring as covered
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE,
-                              graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE,
+                                  graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
         for t, box, verts, content, author in found:
             if t == 2 and verts:
                 _make_carrier(page, box, verts[0], content, author)

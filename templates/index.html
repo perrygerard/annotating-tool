@@ -85,6 +85,15 @@
     .progress-card h3 { font-family: var(--display); font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
     .progress-card p { font-size: 0.84rem; color: var(--ink-light); margin-bottom: 22px; }
     .progress-bar-wrap { background: var(--bench); border-radius: 99px; height: 6px; overflow: hidden; }
+    .dl-status { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; display: none; align-items: center; gap: 12px; max-width: min(520px, calc(100vw - 32px)); padding: 12px 16px; background: #0f172a; color: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgb(15 23 42 / .28); font-size: 0.82rem; line-height: 1.4; }
+    .dl-status.show { display: flex; }
+    .dl-status .dl-spin { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgb(255 255 255 / .3); border-top-color: #fff; animation: dl-rot .8s linear infinite; }
+    .dl-status.done .dl-spin, .dl-status.err .dl-spin { display: none; }
+    .dl-status.err { background: #991b1b; }
+    .dl-status .dl-sub { display: block; opacity: .75; font-size: 0.74rem; }
+    .dl-status .dl-x { flex: none; margin-left: 4px; background: none; border: 0; color: inherit; opacity: .7; cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 0 2px; display: none; }
+    .dl-status.err .dl-x, .dl-status.done .dl-x { display: block; }
+    @keyframes dl-rot { to { transform: rotate(360deg); } }
     .progress-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.72rem; color: var(--ink-light); font-variant-numeric: tabular-nums; }
     .progress-hint { margin-top: 10px; font-size: 0.74rem; color: var(--ink-light); min-height: 1.2em; }
     .progress-bar { height: 100%; background: var(--ink); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
@@ -326,16 +335,16 @@
     /* Toolbar (Box + zoom): larger, bolder controls */
     .col-label { min-height: 52px; }
     .col-label .cl-right { gap: 10px; }
-    .cl-right .cl-btn { font-size: 0.8rem; font-weight: 700; color: #3a4659; border-radius: 5px; box-shadow: 0 0 0 1.5px #d6deea; }
-    .cl-right .cl-btn:hover:not(:disabled) { background: #f4f7fb; }
+    .cl-right .cl-btn { font-size: 0.8rem; font-weight: 700; color: #3a4659; border-radius: 5px; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); }
+    .cl-right .cl-btn:hover:not(:disabled) { background: #f8fafc; }
     .cl-right .tb-box { height: 28px; padding: 0 14px 0 12px; gap: 9px; }
     .box-ico { flex: none; fill: rgb(200 50 44 / .05); stroke: #c8322c; stroke-width: 2.5; }
-    .zoom-group { display: flex; align-items: center; gap: 2px; height: 28px; padding: 4px; border-radius: 5px; background: #f6f8fb; box-shadow: 0 0 0 1.5px #d6deea; box-sizing: border-box; }
-    .zoom-group .cl-btn { box-shadow: 0 0 0 1.5px #d6deea; }
+    .zoom-group { display: flex; align-items: center; gap: 2px; height: 28px; padding: 4px; border-radius: 5px; background: #f8fafc; box-shadow: 0 0 0 1px #e2e8f0, 0 1px 2px 0 rgb(15 23 42 / .05); box-sizing: border-box; }
+    .zoom-group .cl-btn { box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .zoom-group .cl-btn.icon { width: 20px; height: 20px; border-radius: 3px; }
     .zoom-group .zoom-val { min-width: 54px; height: 20px; padding: 0 6px; background: transparent; box-shadow: none; font-size: 0.8rem; font-weight: 700; justify-content: center; }
-    .zoom-group .zoom-val:hover:not(:disabled) { background: #eef2f8; }
-    .cl-right .tb-box.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1.5px #0f172a; }
+    .zoom-group .zoom-val:hover:not(:disabled) { background: #f1f5f9; }
+    .cl-right .tb-box.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1px #0f172a, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .cl-right .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
     .show-orig { display: none; }
     .orig-none .col-labels { grid-template-columns: minmax(0, 1fr); }
@@ -423,6 +432,12 @@
   </div>
   <p class="intro-text" id="intro-text">Upload the annotated PDF and its updated version. Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.</p>
 </div>
+</div>
+
+<div class="dl-status" id="dl-status" role="status" aria-live="polite">
+  <span class="dl-spin"></span>
+  <span><span id="dl-text"></span><span class="dl-sub" id="dl-sub"></span></span>
+  <button type="button" class="dl-x" id="dl-x" aria-label="Dismiss" onclick="dlHide()">×</button>
 </div>
 
 <!-- ── Progress screen ── -->
@@ -1656,15 +1671,35 @@
     clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 9000);
   }
 
+  // Download feedback: a status card + button label with an elapsed clock, so a slow rebuild never looks like a dead click.
+  let dlTimer = null, dlHideTimer = null;
+  function dlShow(text, sub, mode) {
+    const el = document.getElementById('dl-status');
+    clearTimeout(dlHideTimer);
+    el.className = 'dl-status show' + (mode ? ' ' + mode : '');
+    document.getElementById('dl-text').textContent = text;
+    document.getElementById('dl-sub').textContent = sub || '';
+  }
+  function dlHide() { clearInterval(dlTimer); dlTimer = null; document.getElementById('dl-status').className = 'dl-status'; }
+  function dlStartClock(label) {
+    const t0 = Date.now(), btnLabel = document.getElementById('confirm-btn-label');
+    const tick = () => {
+      const s = Math.floor((Date.now() - t0) / 1000), clock = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      btnLabel.textContent = 'Preparing… ' + clock;
+      dlShow(label, s > 20 ? 'Elapsed ' + clock + '. Big files can take a few minutes. Keep this tab open.' : 'Elapsed ' + clock);
+    };
+    tick(); dlTimer = setInterval(tick, 1000);
+  }
+
   async function confirmAndDownload() {
     if (!currentJobId) { toast('This session has expired — please upload your files again.'); return; }
     const btn = document.getElementById('confirm-btn');
     btn.disabled = true;
-    document.getElementById('confirm-btn-label').textContent = 'Saving…';
-    const fail = msg => { toast(msg); btn.disabled = false; updateConfirmButton(); };
+    const fail = msg => { clearInterval(dlTimer); dlTimer = null; dlShow(msg, '', 'err'); btn.disabled = false; updateConfirmButton(); };
 
     try {
       if (deletedIndices.size > 0 || dotOverrides.size > 0 || sideOverrides.size > 0 || boxEdits.size > 0 || contentEdits.size > 0 || newBoxPayload().length > 0) {
+        dlStartClock('Applying your changes and building the PDF…');
         const res = await fetch(`/confirm/${currentJobId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1673,16 +1708,21 @@
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
-          return fail('Couldn’t save your changes: ' + (d.error || ('server error ' + res.status)) + (res.status === 404 ? ' — the session may have expired, please upload again.' : ''));
+          return fail('Couldn’t save your changes: ' + (d.error || (res.status === 404 ? 'the session may have expired, please upload again.' : httpErrorMessage(res.status))));
         }
+        clearInterval(dlTimer); dlTimer = null;
       }
       // Check the file is ready first so a problem shows a message instead of a dead click
+      dlShow('Checking your PDF…', '');
+      document.getElementById('confirm-btn-label').textContent = 'Preparing…';
       const chk = await fetch('/download/' + currentJobId, { method: 'HEAD' });
       if (!chk.ok) {
         return fail(chk.status === 404
           ? 'The PDF is no longer available — the session may have expired. Please upload your files again.'
-          : 'Download failed (server error ' + chk.status + ').');
+          : 'Download failed. ' + httpErrorMessage(chk.status));
       }
+      const bytes = parseInt(chk.headers.get('Content-Length') || '0', 10);
+      const size = bytes ? ' (' + (bytes / 1048576).toFixed(bytes > 10485760 ? 0 : 1) + ' MB)' : '';
       // Plain same-origin link: the browser handles the attachment itself (more reliable than a blob after async calls)
       const a = document.createElement('a');
       a.href = '/download/' + currentJobId;
@@ -1690,8 +1730,10 @@
       document.body.appendChild(a);
       a.click();
       setTimeout(() => a.remove(), 1000);
+      dlShow('Your download has started' + size, 'Check your browser’s downloads if you don’t see it.', 'done');
+      dlHideTimer = setTimeout(dlHide, 6000);
     } catch (e) {
-      return fail('Couldn’t reach the server — check your connection and try again.');
+      return fail('Couldn’t reach the server — check your connection and try again. If the file is very large the server may have run out of memory or timed out.');
     }
     btn.disabled = false;
     updateConfirmButton();
@@ -1717,6 +1759,7 @@
     document.getElementById('ann-list').innerHTML = '';
     document.getElementById('ann-list-header').style.display = 'none';
     document.getElementById('confirm-btn-label').textContent = 'Download PDF';
+    dlHide();
     document.getElementById('confirm-hint').textContent = '';
     window._annRegistry = [];
     hideError();
