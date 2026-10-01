@@ -305,6 +305,19 @@
     html[data-theme="tailwind"] .tile.active { background: #f0f9ff; border-color: transparent; box-shadow: inset 0 0 0 1.5px #0ea5e9; }
     html[data-theme="tailwind"] .tile-label { font-weight: 500; }
     html[data-theme="tailwind"] .tile-num { font-family: var(--body); font-weight: 600; font-size: 1.05rem; letter-spacing: -0.02em; }
+    /* Filter pills (right rail) */
+    html[data-theme="tailwind"] .summary-tiles { flex-direction: row; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+    html[data-theme="tailwind"] .tile { width: auto; height: 34px; gap: 9px; padding: 0 14px; border: none; border-radius: 9999px; background: #fff; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); transition: background .12s, box-shadow .12s; }
+    html[data-theme="tailwind"] .tile::before { display: none; }
+    html[data-theme="tailwind"] .tile:hover { background: #f8fafc; }
+    html[data-theme="tailwind"] .tile.active { background: #f8fafc; border-color: transparent; box-shadow: 0 0 0 1.5px #0f172a, 0 1px 2px 0 rgb(15 23 42 / .05); }
+    html[data-theme="tailwind"] .tile-label { flex: none; font-size: 0.8rem; font-weight: 500; color: #64748b; }
+    html[data-theme="tailwind"] .tile.active .tile-label { color: #475569; }
+    html[data-theme="tailwind"] .tile-num { font-size: 0.8rem; font-weight: 700; letter-spacing: 0; color: #0f172a; }
+    html[data-theme="tailwind"] .tile.moved .tile-num { color: var(--success); }
+    html[data-theme="tailwind"] .tile.review .tile-num { color: var(--warn); }
+    html[data-theme="tailwind"] .tile.removed .tile-num { color: var(--removed); }
+    .filter-title { margin: 0 0 10px; }
     html[data-theme="tailwind"] .ann-item { border: none; border-radius: 5px; box-shadow: 0 0 0 1px rgb(15 23 42 / .08), 0 1px 2px rgb(15 23 42 / .04); }
     html[data-theme="tailwind"] .ann-item:hover { box-shadow: 0 0 0 1px rgb(15 23 42 / .16), 0 1px 2px rgb(15 23 42 / .06); }
     html[data-theme="tailwind"] .ann-item.open { box-shadow: 0 0 0 2px #0ea5e9, 0 4px 12px -2px rgb(14 165 233 / .2); }
@@ -466,6 +479,7 @@
     <!-- Sidebar -->
     <div class="detail-panel">
       <!-- Stat tiles -->
+      <div class="detail-header filter-title" id="filter-title">Filter</div>
       <div class="summary-tiles" role="group" aria-label="Filter references">
         <button type="button" class="tile total active" data-filter="all" aria-pressed="true"><span class="tile-label">All</span><span class="tile-num" id="stat-total">0</span></button>
         <button type="button" class="tile moved" data-filter="moved" aria-pressed="false"><span class="tile-label">Moved</span><span class="tile-num" id="stat-moved">0</span></button>
