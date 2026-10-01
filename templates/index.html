@@ -335,14 +335,15 @@
     /* Toolbar (Box + zoom): larger, bolder controls */
     .col-label { min-height: 52px; }
     .col-label .cl-right { gap: 10px; }
-    .cl-right .cl-btn { font-size: 0.8rem; font-weight: 700; color: #3a4659; border-radius: 5px; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); }
-    .cl-right .cl-btn:hover:not(:disabled) { background: #f8fafc; }
+    .col-label .cl-btn { font-size: 0.8rem; font-weight: 600; color: #334155; border-radius: 5px; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); }
+    .col-label .cl-btn:hover:not(:disabled) { background: #f8fafc; }
+    .col-label .cl-btn:not(.icon):not(.zoom-val):not(.tb-box) { height: 28px; padding: 0 12px 0 10px; }
     .cl-right .tb-box { height: 28px; padding: 0 14px 0 12px; gap: 9px; }
     .box-ico { flex: none; fill: rgb(200 50 44 / .05); stroke: #c8322c; stroke-width: 2.5; }
-    .zoom-group { display: flex; align-items: center; gap: 2px; height: 28px; padding: 4px; border-radius: 5px; background: #f8fafc; box-shadow: 0 0 0 1px #e2e8f0, 0 1px 2px 0 rgb(15 23 42 / .05); box-sizing: border-box; }
+    .zoom-group { display: flex; align-items: center; gap: 2px; height: 28px; padding: 4px; border-radius: 5px; background: #f8fafc; box-shadow: 0 0 0 1px #e2e8f0; box-sizing: border-box; }
     .zoom-group .cl-btn { box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .zoom-group .cl-btn.icon { width: 20px; height: 20px; border-radius: 3px; }
-    .zoom-group .zoom-val { min-width: 54px; height: 20px; padding: 0 6px; background: transparent; box-shadow: none; font-size: 0.8rem; font-weight: 700; justify-content: center; }
+    .zoom-group .zoom-val { min-width: 54px; height: 20px; padding: 0 6px; background: transparent; box-shadow: none; font-size: 0.8rem; font-weight: 600; justify-content: center; }
     .zoom-group .zoom-val:hover:not(:disabled) { background: #f1f5f9; }
     .cl-right .tb-box.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1px #0f172a, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .cl-right .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
