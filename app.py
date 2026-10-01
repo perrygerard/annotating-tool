@@ -12,7 +12,7 @@ import boxsnap
 from placer import place_references
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
+app.config["MAX_CONTENT_LENGTH"] = 400 * 1024 * 1024  # 400MB total per upload (large design-deck PDFs)
 
 UPLOAD_FOLDER = "/tmp/annotation_uploads"
 OUTPUT_FOLDER = "/tmp/annotation_outputs"
@@ -37,6 +37,28 @@ def cleanup_old_files():
 
 
 threading.Thread(target=cleanup_old_files, daemon=True).start()
+
+
+def friendly_error(e):
+    """Turn a processing exception into something a non-developer can act on."""
+    msg = str(e)
+    low = msg.lower()
+    if isinstance(e, MemoryError) or "out of memory" in low or "cannot allocate" in low:
+        return "The server ran out of memory on these files. Try smaller or compressed PDFs."
+    if "password" in low or "encrypted" in low or "authenticate" in low:
+        return "One of the PDFs is password-protected. Remove the password and try again."
+    if "no annotations" in low:
+        return msg
+    if "cannot open" in low or "failed to open" in low or "not a pdf" in low or "format error" in low or "broken" in low or "no objects found" in low:
+        return "One of the files couldn't be read as a PDF. It may be damaged; try re-exporting it."
+    return "Something went wrong while processing these files (" + msg[:160] + "). Try again, or send the PDFs over so it can be looked at."
+
+
+
+@app.errorhandler(413)
+def _too_large(_e):
+    return jsonify(error="Those files are too large to upload together (limit 400 MB combined). "
+                         "Try compressing the PDFs or splitting them."), 413
 
 
 @app.route("/")
@@ -90,7 +112,7 @@ def remap():
             }
         except Exception as e:
             import traceback
-            jobs[job_id] = {"status": "error", "message": str(e), "trace": traceback.format_exc()}
+            jobs[job_id] = {"status": "error", "message": friendly_error(e), "trace": traceback.format_exc()}
             for p in [annotated_path, new_path]:
                 try:
                     os.remove(p)
@@ -144,7 +166,7 @@ def place():
             }
         except Exception as e:
             import traceback
-            jobs[job_id] = {"status": "error", "message": str(e), "trace": traceback.format_exc()}
+            jobs[job_id] = {"status": "error", "message": friendly_error(e), "trace": traceback.format_exc()}
 
     threading.Thread(target=run_job).start()
     return jsonify({"job_id": job_id})

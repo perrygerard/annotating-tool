@@ -535,6 +535,15 @@
   function showError(msg) { const b = document.getElementById('error-box'); b.textContent = msg; b.style.display = 'block'; }
   function hideError() { document.getElementById('error-box').style.display = 'none'; }
 
+  // Plain-language reasons for failures that come back without a JSON message (usually from the host, not the app).
+  function httpErrorMessage(status) {
+    if (status === 413) return 'Those files are too large to upload together. Try compressing the PDFs.';
+    if (status === 502 || status === 503) return 'The server is busy or restarting (it may have run out of memory on a big file, or is waking up after being idle). Wait a minute and try again; if it keeps happening, try smaller PDFs.';
+    if (status === 504 || status === 524) return 'The server took too long to respond. The files may be too large or complex to process in one go.';
+    if (status === 429) return 'Too many requests right now. Wait a moment and try again.';
+    return 'The server returned an unexpected error (' + status + '). Try again, or try smaller PDFs.';
+  }
+
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function submitJob() {
     hideError();
@@ -555,12 +564,22 @@
 
     try {
       const res = await fetch(cfg.endpoint, { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok) { clearInterval(timer); showUploadError(data.error || 'Upload failed.'); return; }
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) {
+        clearInterval(timer);
+        showUploadError(data.error || httpErrorMessage(res.status));
+        return;
+      }
       currentJobId = data.job_id;
       pollInterval = setInterval(async () => {
         try {
           const r = await fetch('/status/' + currentJobId);
+          if (r.status === 404) {
+            clearInterval(pollInterval); clearInterval(timer);
+            showUploadError('The server restarted while working on your files (this can happen with very large PDFs when it runs out of memory), so the job was lost. Please try again, or use smaller PDFs.');
+            return;
+          }
           const d = await r.json();
           if (d.progress) document.getElementById('progress-detail').textContent = d.progress;
           if (d.status === 'done') {
@@ -569,13 +588,13 @@
             setTimeout(() => showResults(d.results), 400);
           } else if (d.status === 'error') {
             clearInterval(pollInterval); clearInterval(timer);
-            showUploadError('Processing error: ' + d.message);
+            showUploadError(d.message);
           }
         } catch(e) {}
       }, 1500);
     } catch(e) {
       clearInterval(timer);
-      showUploadError('Upload failed — please check your connection and try again.');
+      showUploadError('Couldn’t finish the upload. Your connection may have dropped, or the server may have rejected or restarted on a very large file. Check your connection and try again; if it repeats, try smaller PDFs.');
     }
   }
 
