@@ -1278,10 +1278,63 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str, progres
             "parent_index": info.parent_index,
         })
 
+    _mark_removed_pages(all_annots, results, len(old_doc), len(new_doc))
+
     results = _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, progress)
     old_doc.close()
     new_doc.close()
     return results
+
+
+def _mark_removed_pages(all_annots, results, n_old, n_new):
+    """Find old pages that no longer exist in the new PDF and flag their pins "Page removed".
+    Pages whose pins match confidently act as anchors (old page -> new page). In a gap between two anchors,
+    if the new PDF has fewer pages than the old one had, the pages with the weakest matches are the missing ones."""
+    from statistics import median
+    by_page = {}
+    for a in all_annots:
+        if a.parent_index is None:
+            by_page.setdefault(a.page_num, []).append(a)
+    anchors, frac = {}, {}
+    for p, items in by_page.items():
+        good = [a for a in items if a.matched and a.match_confidence >= 0.6 and a.status == "moved"]
+        frac[p] = len(good) / len(items)
+        if frac[p] >= 0.5:
+            anchors[p] = int(median([_out_page(a) for a in good]))
+    if len(anchors) < 2 and n_old == n_new:
+        return
+    pts = [(-1, -1)] + sorted(anchors.items()) + [(n_old, n_new)]
+    removed = {}
+    for (pa, na), (pb, nb) in zip(pts, pts[1:]):
+        missing = (pb - pa) - (nb - na)
+        if missing <= 0:
+            continue
+        cand = [p for p in by_page if pa < p < pb and p not in anchors and frac[p] < 0.3]
+        cand.sort(key=lambda p: frac[p])
+        for p in cand[:missing]:
+            removed[p] = min(max(nb, 0), n_new - 1) if nb < n_new else n_new - 1
+    if not removed:
+        return
+    for a, entry in zip(all_annots, results["annotations"]):
+        root = a.parent_index if a.parent_index is not None else a.index
+        pg = a.page_num
+        if pg not in removed:
+            continue
+        if a.parent_index is None:
+            if a.status == "moved": results["moved"] -= 1
+            elif a.status == "needs_look": results["needs_look"] -= 1
+            if a.status != "content_removed": results["content_removed"] += 1
+        if a.matched:
+            results["matched"] -= 1; results["unmatched"] += 1
+        a.status = "content_removed"
+        a.matched = False
+        a.match_method = "page"
+        a.match_note = f"Page {pg + 1} of the old PDF is not in the new PDF. Kept at its original spot on page {removed[pg] + 1}."
+        a.new_rect = fitz.Rect(a.rect)
+        a.new_vertices = list(a.vertices)
+        a.new_page_num = removed[pg]
+        entry.update(status="content_removed", method="page", note=a.match_note, page_removed=True)
+    results["removed_pages"] = sorted(p + 1 for p in removed)
 
 
 def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, progress=None):
@@ -1354,6 +1407,7 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, prog
                 "confidence": f"{info.match_confidence:.0%}",
                 "method": info.match_method,
                 "note": info.match_note,
+                "page_removed": info.match_method == "page",
                 # New position (right/output side)
                 "x": new_coords["x"],
                 "y": new_coords["y"],
@@ -1687,6 +1741,48 @@ def _box_rect(info, boxes, pw_total, ph):
     return fitz.Rect(info.new_rect)
 
 
+def _spread_entries(want, hts, gap, lo, hi):
+    """Vertical positions for sidebar entries (kept in order, never overlapping) that stay as close as
+    possible to where each one wants to be. A bunch of neighbouring pins gets one stack centred on them
+    (pool-adjacent-violators: least total squared drift) instead of being pushed ever further down."""
+    n = len(want)
+    if n == 0:
+        return []
+    off, acc = [], 0.0
+    for h in hts:
+        off.append(acc)
+        acc += h + gap
+    z = [w - o for w, o in zip(want, off)]            # entries must satisfy y_i - off_i non-decreasing
+    blocks = []                                        # [sum, count]
+    for v in z:
+        blocks.append([v, 1])
+        while len(blocks) > 1 and blocks[-2][0] / blocks[-2][1] > blocks[-1][0] / blocks[-1][1]:
+            s, c = blocks.pop()
+            blocks[-1][0] += s
+            blocks[-1][1] += c
+    ys = []
+    for s, c in blocks:
+        ys += [s / c] * c
+    ys = [y + o for y, o in zip(ys, off)]
+    total = acc - gap
+    if total >= hi - lo:                               # taller than the page: just stack from the top
+        return [lo + o for o in off]
+    shift = max(0.0, lo - ys[0])                       # keep the whole stack inside [lo, hi]
+    ys = [y + shift for y in ys]
+    over = ys[-1] + hts[-1] - hi
+    if over > 0:
+        ys = [y - over for y in ys]
+    cur = lo                                           # a pull-up may have gone above lo for a block: re-clamp
+    for i in range(n):
+        ys[i] = max(ys[i], cur)
+        cur = ys[i] + hts[i] + gap
+    nxt = hi
+    for i in range(n - 1, -1, -1):
+        ys[i] = min(ys[i], nxt - hts[i])
+        nxt = ys[i] - gap
+    return ys
+
+
 def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
               overrides=None, draw_dots=True, sides=None, boxes=None, progress=None):
     """Write annotations to a new PDF with a numbered reference sidebar.
@@ -1808,12 +1904,26 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
                            fitz.Point(pw + SIDEBAR_W - SIDEBAR_PAD, rule_y),
                            color=DIVIDER_COLOR, width=0.5 * S)
 
-        # ── Draw sidebar entries ─────────────────────────────────────────────
-        cursor_y = HEADER_H + SIDEBAR_PAD
-        for info, lns in zip(annots_on_page, wrapped):
+        # ── Draw sidebar entries, each level with its pin ────────────────────
+        # Entries sit at the height of the pin they describe so an editor can read across; when
+        # neighbours would overlap they are pushed down (and, at the bottom, back up) just enough.
+        top_min = HEADER_H + SIDEBAR_PAD
+        hts = [max(DOT_R * 2, len(lns) * lead) for lns in wrapped]
+        want = []
+        for info in annots_on_page:
+            if info.index in overrides:
+                ty = overrides[info.index][1] * ph
+            else:
+                ty = _anchor_point(info)[1]
+            want.append(ty - DOT_R)
+        ys = _spread_entries(want, hts, gap, top_min, ph - SIDEBAR_PAD)
+        for info, lns, cursor_y, h, wy in zip(annots_on_page, wrapped, ys, hts, want):
             num = global_num[(_out_page(info), info.index)]
             dot_x = pw + SIDEBAR_PAD + DOT_R
             dot_y = cursor_y + DOT_R
+            if abs(cursor_y - wy) > DOT_R * 2:      # entry sits well away from its pin: a faint line leads back to the pin's height
+                page.draw_line(fitz.Point(pw, wy + DOT_R), fitz.Point(dot_x - DOT_R, dot_y),
+                               color=(0.86, 0.62, 0.6), width=0.6 * S)
             _draw_number_dot(page, dot_x, dot_y, num, radius=DOT_R)
 
             text_y = cursor_y + font
@@ -1822,7 +1932,6 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
                                  fontname="helv", fontsize=font,
                                  color=(0.1, 0.1, 0.1))
                 text_y += lead
-            cursor_y += max(DOT_R * 2, len(lns) * lead) + gap
 
         # ── Draw numbered dots on page content ──────────────────────────────
         PIN_R = DOT_R * PIN_SCALE
