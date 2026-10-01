@@ -252,7 +252,8 @@ def _effective_annots(all_annots, pdf_path, edits, new_boxes, overrides):
             try:
                 pn = int(nb["page"]) - 1
                 bi, pi = int(nb["index"]), int(nb["pin_index"])
-                fx, fy, fw, fh = [float(v) for v in nb["box"]]
+                has_box = nb.get("box") is not None            # a pin added on its own has no box
+                fx, fy, fw, fh = [float(v) for v in nb["box"]] if has_box else (0.0, 0.0, 0.0, 0.0)
                 px, py = [float(v) for v in nb["pin"]]
                 page = doc[pn]
             except (KeyError, ValueError, TypeError, IndexError):
@@ -272,7 +273,7 @@ def _effective_annots(all_annots, pdf_path, edits, new_boxes, overrides):
             pin.tip_point = fitz.Point(tx, ty)
             pin.new_rect = pin_rect; pin.new_vertices = [(tx, ty), (tx + 30, ty - 20)]
             pin.new_page_num = pn; pin.status = "moved"; pin.matched = True
-            eff += [sq, pin]
+            eff += [sq, pin] if has_box else [pin]
             overrides.setdefault(pi, (px, py))
     finally:
         doc.close()
