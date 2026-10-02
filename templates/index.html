@@ -405,6 +405,14 @@
     .toolbar .submit-btn { margin: 0 0 0 auto; width: auto; height: 34px; padding: 0 16px; border-radius: 8px; font-size: .82rem; font-weight: 600; box-shadow: none; }
     .toolbar .submit-btn:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; opacity: 1; }
     .toolbar .submit-btn:not(:disabled) { background: #0f172a; color: #fff; }
+
+    .dc-edit-label { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 0 5px; font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; }
+    .dc-edit-hint { font-weight: 500; letter-spacing: 0; text-transform: none; color: #94a3b8; }
+    .ann-item .dc-edit { background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'/%3E%3C/svg%3E") no-repeat right 10px top 10px; border: none; border-radius: 8px; padding: 9px 32px 9px 12px; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); cursor: text; transition: box-shadow .12s; }
+    .ann-item .dc-edit:hover { box-shadow: 0 0 0 1px #94a3b8, 0 1px 2px 0 rgb(15 23 42 / .05); }
+    .ann-item .dc-edit:focus { box-shadow: 0 0 0 2px #0ea5e9; background-color: #fff; }
+    .ann-item .dc-edit:focus ~ *, .ann-item .dc-edit-label:has(+ .dc-edit:focus) .dc-edit-hint { color: #0ea5e9; }
+    html[data-theme="tailwind"] .toolbar .submit-btn { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 16px; line-height: 1; border-radius: 8px; font-size: .82rem; box-shadow: none; }
     body.has-results #submit-btn { display: none; }
     #rail-empty { display: flex; flex-direction: column; gap: 12px; }
     body.has-results #rail-empty { display: none; }
@@ -1349,6 +1357,7 @@
         <svg class="ann-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg>
       </button>
       <div class="ann-body" id="${bodyId}" hidden>
+        <div class="dc-edit-label"><span>Reference</span><span class="dc-edit-hint">Click to edit</span></div>
         <textarea class="dc-edit" rows="1" aria-label="Reference text" placeholder="Type the reference for this spot…">${esc(a.content)}</textarea>
         <div class="dc-row"><span>Page</span><span>${esc(entry.pg.page_num)}</span></div>
         <div class="dc-row"><span>Author</span><span>${esc(a.author || '—')}</span></div>

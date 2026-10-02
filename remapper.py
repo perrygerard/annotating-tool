@@ -1921,9 +1921,6 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             num = global_num[(_out_page(info), info.index)]
             dot_x = pw + SIDEBAR_PAD + DOT_R
             dot_y = cursor_y + DOT_R
-            if abs(cursor_y - wy) > DOT_R * 2:      # entry sits well away from its pin: a faint line leads back to the pin's height
-                page.draw_line(fitz.Point(pw, wy + DOT_R), fitz.Point(dot_x - DOT_R, dot_y),
-                               color=(0.86, 0.62, 0.6), width=0.6 * S)
             _draw_number_dot(page, dot_x, dot_y, num, radius=DOT_R)
 
             text_y = cursor_y + font
