@@ -80,7 +80,7 @@
     .error-box { background: var(--error-bg); color: var(--error); border-radius: 8px; padding: 11px 15px; font-size: 0.84rem; margin-top: 11px; display: none; }
 
     /* ── Progress screen ── */
-    #progress-screen { display: none; position: fixed; top: 56px; left: 0; right: 0; bottom: 0; z-index: 40; align-items: center; justify-content: center; padding: 24px; background: rgb(248 250 252 / .8); }
+    #progress-screen { display: none; position: fixed; top: 56px; left: 0; right: 0; bottom: 0; z-index: 80; align-items: center; justify-content: center; padding: 24px; background: rgb(248 250 252 / .8); }
     .progress-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 36px 32px; max-width: 440px; width: 100%; text-align: center; }
     .progress-card h3 { font-family: var(--display); font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
     .progress-card p { font-size: 0.84rem; color: var(--ink-light); margin-bottom: 22px; }
@@ -212,8 +212,6 @@
     .mode-opt input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(15 23 42 / .3); transition: transform .15s; }
     .mode-opt input:checked { background: var(--btn); }
     .mode-opt input:checked::after { transform: translateX(14px); }
-    .mode-opt + .submit-btn { margin-left: 4px !important; }
-    body.has-results .mode-opt { display: none !important; }
     .badge.content_removed  { background: var(--removed-bg); color: var(--removed); }
     .badge.deleted  { background: var(--bench); color: var(--ink-light); }
 
@@ -328,6 +326,13 @@
     html[data-theme="tailwind"] .tile.review .tile-num { color: var(--warn); }
     html[data-theme="tailwind"] .tile.removed .tile-num { color: var(--removed); }
     .filter-title { margin: 0 0 10px; }
+    .conf-card { margin: 0 0 20px; padding: 14px 16px; border-radius: 12px; background: #f8fafc; box-shadow: inset 0 0 0 1px #e2e8f0; }
+    .conf-top { display: flex; align-items: baseline; gap: 8px; }
+    .conf-pct { font-size: 1.7rem; font-weight: 700; letter-spacing: -.03em; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .conf-lbl { font-size: .78rem; font-weight: 600; color: #64748b; }
+    .conf-bar { height: 6px; border-radius: 99px; background: #e2e8f0; margin: 10px 0 8px; overflow: hidden; }
+    .conf-bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: #4449F2; transition: width .3s; }
+    .conf-sub { font-size: .78rem; line-height: 1.4; color: #64748b; }
     html[data-theme="tailwind"] .ann-item { border: none; border-radius: 5px; box-shadow: 0 0 0 1px rgb(15 23 42 / .08), 0 1px 2px rgb(15 23 42 / .04); }
     html[data-theme="tailwind"] .ann-item:hover { box-shadow: 0 0 0 1px rgb(15 23 42 / .16), 0 1px 2px rgb(15 23 42 / .06); }
     html[data-theme="tailwind"] .ann-item.open { box-shadow: 0 0 0 2px #4449F2, 0 4px 12px -2px rgb(68 73 242 / .2); }
@@ -387,9 +392,18 @@
     .toolbar .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
     body.add-mode .tb-orig { display: none; }
     body:not(.has-results) .reset-btn { display: none; }
-    #drop-area { display: flex; flex-direction: column; gap: 18px; align-items: stretch; }
+    #drop-area { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; background: rgb(15 23 42 / .28); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+    #drop-area.drop-area-hidden { display: none; }
+    .drop-card { width: min(880px, 100%); margin: auto; background: #fff; border-radius: 20px; padding: 28px; box-shadow: 0 24px 60px -12px rgb(15 23 42 / .35), 0 0 0 1px rgb(15 23 42 / .06); display: flex; flex-direction: column; gap: 18px; }
+    .drop-head h2 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -.02em; color: #0f172a; }
+    .drop-head p { margin: 6px 0 0; font-size: .88rem; color: #64748b; }
+    .drop-foot { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+    .drop-foot .mode-opt { margin: 0 auto 0 0; }
+    .drop-foot .submit-btn { width: auto; margin: 0; padding: 10px 22px; border-radius: 999px; font-size: .9rem; box-shadow: 0 1px 2px rgb(15 23 42 / .2); }
+    .drop-foot .submit-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; opacity: 1; }
+    #drop-area .drop-actions .intro-text { text-align: center; }
     .drop-grid { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-    .drop-grid .upload-zone { position: relative; min-height: 540px; padding: 0; border: 2px dashed #cbd5e1; border-radius: 14px; background: #fff; overflow: hidden; justify-content: center; }
+    .drop-grid .upload-zone { position: relative; min-height: 320px; padding: 0; border: 2px dashed #cbd5e1; border-radius: 14px; background: #fff; overflow: hidden; justify-content: center; }
     .drop-grid .upload-zone::before { content: none; }
     .drop-grid .upload-zone:hover, .drop-grid .upload-zone.drag-over { border-color: #94a3b8; background: #fff; }
     .drop-grid .upload-zone.has-file { border-style: solid; border-color: #34d399; background: #fff; }
@@ -412,10 +426,6 @@
     .zone-arrow { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 36px; height: 36px; border-radius: 99px; background: #fff; color: #64748b; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); z-index: 2; pointer-events: none; }
     .drop-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; }
     .drop-actions .intro-text { margin: 0; font-size: .8rem; color: #94a3b8; max-width: none; }
-    .toolbar .submit-btn { margin: 0 0 0 auto; width: auto; height: auto; padding: 9px 18px; border-radius: 999px; font-size: .86rem; font-weight: 600; box-shadow: 0 1px 2px rgb(15 23 42 / .2); }
-    .toolbar .submit-btn:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; opacity: 1; }
-    .toolbar .submit-btn:not(:disabled) { background: var(--btn); color: var(--btn-fg); }
-    .toolbar .submit-btn:hover:not(:disabled) { background: var(--btn-hover); }
 
     .dc-edit-label { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 0 5px; font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; }
     .dc-edit-hint { font-weight: 500; letter-spacing: 0; text-transform: none; color: #94a3b8; }
@@ -423,8 +433,6 @@
     .ann-item .dc-edit:hover { box-shadow: 0 0 0 1px #94a3b8, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .ann-item .dc-edit:focus { box-shadow: 0 0 0 2px #0ea5e9; background-color: #fff; }
     .ann-item .dc-edit:focus ~ *, .ann-item .dc-edit-label:has(+ .dc-edit:focus) .dc-edit-hint { color: #0ea5e9; }
-    html[data-theme="tailwind"] .toolbar .submit-btn { display: inline-flex; align-items: center; justify-content: center; height: auto; padding: 9px 18px; line-height: normal; border-radius: 999px; font-size: .86rem; box-shadow: 0 1px 2px rgb(15 23 42 / .2); }
-    body.has-results #submit-btn { display: none; }
     #rail-empty { display: flex; flex-direction: column; gap: 12px; }
     body.has-results #rail-empty { display: none; }
     .rail-empty-box { border-radius: 10px; border: 1px dashed #cbd5e1; padding: 18px 16px; font-size: .88rem; line-height: 1.5; color: #64748b; background: #fff; }
@@ -530,16 +538,14 @@
       </div>
       <button type="button" class="cl-btn tb-orig" data-act="toggle-orig" id="orig-btn" disabled>Hide original</button>
     </div>
-    <label class="mode-opt" id="derive-opt" style="display:none;" title="Turn this on when the new file is a derivative asset (shorter, rearranged or a new format), not an update of the annotated one. Each claim is found by its wording.">
-      <input type="checkbox" id="derive-check"> <span>Derivative asset</span>
-    </label>
-    <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Carry annotations over</button>
   </div>
   <div class="results-layout">
 
     <!-- Page previews -->
     <div class="pages-panel" id="pages-panel">
-      <div id="drop-area">
+      <div id="drop-area" role="dialog" aria-modal="true" aria-labelledby="drop-title">
+       <div class="drop-card">
+        <div class="drop-head"><h2 id="drop-title">Carry your annotations over</h2><p>Add the annotated file, then the new one. Large PDFs are fine, up to 400&nbsp;MB combined.</p></div>
         <div class="drop-grid">
           <div class="upload-zone" id="zone-annotated">
             <input type="file" id="input-annotated" accept=".pdf,.docx" />
@@ -548,8 +554,6 @@
               <div class="upload-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></div>
               <div class="zone-step">Annotated source</div>
               <div class="upload-label" id="label-annotated">Drop your annotated file</div>
-              <div class="upload-hint">A PDF with reviewer callouts, or a Word doc with the references to place.</div>
-              <div class="upload-chips"><span>PDF</span><span>DOCX</span></div>
               <span class="choose-btn">Choose file</span>
               <div class="upload-filename" id="name-annotated"></div>
             </div>
@@ -562,24 +566,34 @@
               <div class="upload-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></div>
               <div class="zone-step">Updated design</div>
               <div class="upload-label" id="label-new">Drop your new PDF</div>
-              <div class="upload-hint">The version to carry the annotations onto.</div>
-              <div class="upload-chips"><span>PDF</span></div>
               <span class="choose-btn">Choose file</span>
               <div class="upload-filename" id="name-new"></div>
             </div>
           </div>
         </div>
         <div class="error-box" id="error-box"></div>
+        <div class="drop-foot">
+          <label class="mode-opt" id="derive-opt" style="display:none;" title="Turn this on when the new file is a derivative asset (shorter, rearranged or a new format), not an update of the annotated one. Each claim is found by its wording.">
+            <input type="checkbox" id="derive-check"> <span>Derivative asset</span>
+          </label>
+          <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Carry annotations over</button>
+        </div>
         <div class="drop-actions">
-          <p class="intro-text" id="intro-text">We pick the right workflow from the file you drop · up to 400 MB combined</p>
+          <p class="intro-text" id="intro-text">We pick the right workflow from the file you drop</p>
           <div class="template-link">Not sure how to lay out the reference list? <a href="/template.docx">Download the Word template</a></div>
         </div>
+       </div>
       </div>
     </div>
 
     <!-- Sidebar -->
     <div class="detail-panel">
       <!-- Stat tiles -->
+      <div class="conf-card" id="conf-card" hidden>
+        <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">placement confidence</span></div>
+        <div class="conf-bar"><i id="conf-bar-fill"></i></div>
+        <div class="conf-sub" id="conf-sub"></div>
+      </div>
       <div class="detail-header filter-title" id="filter-title">Filter</div>
       <div class="summary-tiles" role="group" aria-label="Filter references">
         <button type="button" class="tile total active" data-filter="all" aria-pressed="true"><span class="tile-label">All</span><span class="tile-num" id="stat-total">0</span></button>
@@ -647,7 +661,7 @@
     document.getElementById('derive-opt').style.display = (f && extOf(f) !== 'docx') ? '' : 'none';
     const c = MODES[mode];
     submitBtn.textContent = c.btn;
-    document.getElementById('intro-text').textContent = f ? c.intro : 'We pick the right workflow from the file you drop · up to 400 MB combined';
+    document.getElementById('intro-text').textContent = f ? c.intro : 'We pick the right workflow from the file you drop';
     document.getElementById('label-annotated').textContent = f ? (mode === 'add' ? 'Reference list (Word)' : mode === 'derive' ? 'Annotated source' : 'Annotated PDF') : 'Annotated source';
     document.getElementById('progress-title').textContent = c.title;
     document.getElementById('progress-detail').textContent = c.detail;
@@ -1362,6 +1376,28 @@
       t.classList.toggle('active', on); t.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     items.forEach(it => { it.hidden = activeFilter !== 'all' && it.dataset.bucket !== activeFilter; });
+    updateConfidence(items);
+  }
+  // Overall placement confidence: average over the pins still in play (removed ones don't count).
+  // A pin the reviewer has adjusted counts as 100%; others use the matcher's own confidence.
+  function updateConfidence(items) {
+    const card = document.getElementById('conf-card'), reg = window._annRegistry || [];
+    let sum = 0, n = 0, solid = 0, look = 0;
+    items.forEach(it => {
+      const e = reg[Number(it.dataset.idx)]; if (!e || it.dataset.bucket === 'removed') return;
+      const k = e.ann.index, done = reviewedIndices.has(k);
+      const c = done ? 1 : Math.max(0, Math.min(1, (parseFloat(e.ann.confidence) || 0) / 100));
+      sum += c; n++;
+      if (it.dataset.bucket === 'moved') solid++; else look++;
+    });
+    if (!items.length) { card.hidden = true; return; }
+    card.hidden = false;
+    const pct = n ? Math.round(100 * sum / n) : 0;
+    document.getElementById('conf-pct').textContent = pct + '%';
+    document.getElementById('conf-bar-fill').style.width = pct + '%';
+    document.getElementById('conf-sub').textContent = n
+      ? `${solid} of ${n} placed with confidence` + (look ? ` · ${look} to review` : ' · nothing left to review')
+      : 'No pins in play';
   }
   function setFilter(f) { activeFilter = f; updateFilters(); }
   document.querySelectorAll('.tile[data-filter]').forEach(t => t.addEventListener('click', () => setFilter(t.dataset.filter)));
