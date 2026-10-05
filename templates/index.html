@@ -207,8 +207,13 @@
     .badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 99px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
     .badge.moved, .badge.reviewed { background: var(--success-bg); color: var(--success); }
     .badge.needs_look       { background: var(--warn-bg);    color: var(--warn); }
-    .mode-opt { display:flex; gap:10px; align-items:flex-start; max-width:640px; margin:12px auto 0; font-size:13px; line-height:1.45; color:var(--text-2, #555); cursor:pointer; }
-    .mode-opt input { margin-top:3px; }
+    .mode-opt { margin: 0 0 0 auto; display: inline-flex; align-items: center; gap: 8px; font-size: .82rem; font-weight: 600; color: #334155; cursor: pointer; user-select: none; }
+    .mode-opt input { appearance: none; -webkit-appearance: none; width: 32px; height: 18px; border-radius: 999px; background: #cbd5e1; position: relative; margin: 0; cursor: pointer; transition: background .15s; flex: none; }
+    .mode-opt input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(15 23 42 / .3); transition: transform .15s; }
+    .mode-opt input:checked { background: var(--btn); }
+    .mode-opt input:checked::after { transform: translateX(14px); }
+    .mode-opt + .submit-btn { margin-left: 4px !important; }
+    body.has-results .mode-opt { display: none !important; }
     .badge.content_removed  { background: var(--removed-bg); color: var(--removed); }
     .badge.deleted  { background: var(--bench); color: var(--ink-light); }
 
@@ -525,6 +530,9 @@
       </div>
       <button type="button" class="cl-btn tb-orig" data-act="toggle-orig" id="orig-btn" disabled>Hide original</button>
     </div>
+    <label class="mode-opt" id="derive-opt" style="display:none;" title="Turn this on when the new file is a derivative asset (shorter, rearranged or a new format), not an update of the annotated one. Each claim is found by its wording.">
+      <input type="checkbox" id="derive-check"> <span>Derivative asset</span>
+    </label>
     <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Carry annotations over</button>
   </div>
   <div class="results-layout">
@@ -562,9 +570,6 @@
           </div>
         </div>
         <div class="error-box" id="error-box"></div>
-        <label class="mode-opt" id="derive-opt" style="display:none;">
-          <input type="checkbox" id="derive-check"> <span>The new file is a <b>different piece</b> (shorter, rearranged or a new format), not an update of this one. Find each claim by its wording.</span>
-        </label>
         <div class="drop-actions">
           <p class="intro-text" id="intro-text">We pick the right workflow from the file you drop · up to 400 MB combined</p>
           <div class="template-link">Not sure how to lay out the reference list? <a href="/template.docx">Download the Word template</a></div>
@@ -629,8 +634,8 @@
   const MODES = {
     update: { btn: 'Carry annotations over', intro: 'Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.',
               title: 'Matching callouts to the new pages…', detail: 'Large PDFs can take up to a minute.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf' },
-    derive: { btn: 'Find claims in the new piece', intro: 'Each callout’s claim is searched for by wording in the new piece. Found claims get a pin; wording that changed is flagged to check; claims that were cut are listed as not in this piece.',
-              title: 'Finding each claim in the new piece…', detail: 'Pages without selectable text are read with OCR, which takes longer.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf', extra: { mode: 'derivative' } },
+    derive: { btn: 'Find claims in the derivative asset', intro: 'Each callout’s claim is searched for by wording in the derivative asset. Found claims get a pin; wording that changed is flagged to check; claims that were cut are listed as not in this asset.',
+              title: 'Finding each claim in the derivative asset…', detail: 'Pages without selectable text are read with OCR, which takes longer.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf', extra: { mode: 'derivative' } },
     add:    { btn: 'Place references', intro: 'Word doc detected. Each reference is placed from its superscript number or the copy it supports, with a References sidebar. Anything it can’t place is left for you to drag into position.',
               title: 'Placing references on the pages…', detail: 'Pages without selectable text are read with OCR, which takes longer.', endpoint: '/place', fa: 'reference_doc', fb: 'layout_pdf' },
   };
@@ -1445,7 +1450,7 @@
       }
     });
     const state = removed ? 'deleted' : worst;
-    const label = removed ? (a.method === 'absent' ? 'Not in this piece' : 'Removed') : state === 'reviewed' ? '✓ Adjusted' : (state === 'content_removed' && a.page_removed) ? '✕ Page removed' : (STATUS_LABELS[state] || state);
+    const label = removed ? (a.method === 'absent' ? 'Not in this asset' : 'Removed') : state === 'reviewed' ? '✓ Adjusted' : (state === 'content_removed' && a.page_removed) ? '✕ Page removed' : (STATUS_LABELS[state] || state);
     const badge = item.querySelector('.ann-status');
     badge.className = 'badge ann-status ' + state;
     badge.textContent = label;

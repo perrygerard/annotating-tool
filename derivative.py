@@ -175,7 +175,7 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
         for a in list(pg.annots() or []):
             pg.delete_annot(a)
     deriv = fitz.open(deriv_path)
-    prog(3, "Reading the new piece")
+    prog(3, "Reading the derivative asset")
     idx = Index(deriv)
     cs = callouts(src)
     boxes = {}
@@ -202,7 +202,7 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
     n_src, n_der = len(src), len(deriv)
     all_annots = []
     for k, c in enumerate(cs):
-        prog(5 + 80 * k / max(1, len(cs)), f"Finding claim {k + 1} of {len(cs)} in the new piece")
+        prog(5 + 80 * k / max(1, len(cs)), f"Finding claim {k + 1} of {len(cs)} in the derivative asset")
         pn = c["page"]
         page = src[pn]
         pa = page.rect.get_area()
@@ -229,7 +229,7 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
             info.new_rect = fitz.Rect(tx, ty - 6, tx + 12, ty + 6)
             info.new_vertices = [(tx, ty), (tx + 30, ty)]
             info.status, info.match_method, info.match_confidence = "content_removed", "absent", 0.0
-            info.match_note = "Not found in this piece. Drag the pin onto the claim if it is there, or leave it removed."
+            info.match_note = "Not found in this asset. Drag the pin onto the claim if it is there, or leave it removed."
             results["content_removed"] += 1
             results["unmatched"] += 1
         else:
