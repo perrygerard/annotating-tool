@@ -392,7 +392,7 @@
     .toolbar .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
     body.add-mode .tb-orig { display: none; }
     body:not(.has-results) .reset-btn { display: none; }
-    #drop-area { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; background: rgb(15 23 42 / .28); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+    #drop-area { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; background: rgb(15 23 42 / .16); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
     #drop-area.drop-area-hidden { display: none; }
     .drop-card { width: min(880px, 100%); margin: auto; background: #fff; border-radius: 20px; padding: 28px; box-shadow: 0 24px 60px -12px rgb(15 23 42 / .35), 0 0 0 1px rgb(15 23 42 / .06); display: flex; flex-direction: column; gap: 18px; }
     .drop-head h2 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -.02em; color: #0f172a; }
@@ -433,7 +433,23 @@
     .ann-item .dc-edit:hover { box-shadow: 0 0 0 1px #94a3b8, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .ann-item .dc-edit:focus { box-shadow: 0 0 0 2px #0ea5e9; background-color: #fff; }
     .ann-item .dc-edit:focus ~ *, .ann-item .dc-edit-label:has(+ .dc-edit:focus) .dc-edit-hint { color: #0ea5e9; }
-    #rail-empty { display: flex; flex-direction: column; gap: 12px; }
+    /* Empty-state skeletons behind the upload modal */
+    #ghost-pages { display: flex; flex-direction: column; gap: 28px; padding-top: 4px; }
+    body.has-results #ghost-pages { display: none; }
+    .gp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .gp-cols span { height: 10px; width: 80px; border-radius: 4px; background: #e2e8f0; justify-self: center; }
+    .gp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+    .gp { background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px rgb(15 23 42 / .07), 0 10px 25px -8px rgb(15 23 42 / .15); overflow: hidden; }
+    .gp-in { padding: 9% 10%; display: flex; flex-direction: column; gap: 10px; }
+    .gp-in i { display: block; height: 8px; border-radius: 4px; background: #e2e8f0; }
+    .gp-in i:first-child { height: 14px; background: #cbd5e1; }
+    .gp-in b { display: block; height: 28%; border-radius: 6px; background: #eef2f7; margin: 6px 0; }
+    .sk-head { height: 10px; width: 90px; border-radius: 4px; background: #e2e8f0; margin: 2px 0 4px; }
+    .sk-ref { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; background: #fff; box-shadow: 0 0 0 1px rgb(15 23 42 / .08); }
+    .sk-dot { width: 26px; height: 26px; border-radius: 50%; background: #e2e8f0; flex: none; }
+    .sk-pill { height: 18px; border-radius: 999px; background: #eef2f7; }
+    .sk-chev { margin-left: auto; width: 10px; height: 10px; border-radius: 3px; background: #e2e8f0; }
+    #rail-empty { display: flex; flex-direction: column; gap: 10px; }
     body.has-results #rail-empty { display: none; }
     .rail-empty-box { border-radius: 10px; border: 1px dashed #cbd5e1; padding: 18px 16px; font-size: .88rem; line-height: 1.5; color: #64748b; background: #fff; }
     .rail-rule { border: 0; border-top: 1px solid #e2e8f0; margin: 8px 0 4px; width: 100%; }
@@ -543,6 +559,11 @@
 
     <!-- Page previews -->
     <div class="pages-panel" id="pages-panel">
+      <div id="ghost-pages" aria-hidden="true">
+        <div class="gp-cols"><span></span><span></span></div>
+        <div class="gp-row"><div class="gp" style="aspect-ratio:0.77"><div class="gp-in"><i style="width:40%"></i><i style="width:70%"></i><i style="width:92%"></i><i style="width:86%"></i><b></b><i style="width:88%"></i><i style="width:72%"></i><i style="width:92%"></i><i style="width:60%"></i></div></div><div class="gp" style="aspect-ratio:0.56"><div class="gp-in"><i style="width:46%"></i><i style="width:76%"></i><i style="width:90%"></i><i style="width:70%"></i><b></b><i style="width:88%"></i><i style="width:72%"></i><i style="width:92%"></i><i style="width:60%"></i></div></div></div>
+        <div class="gp-row"><div class="gp" style="aspect-ratio:0.77"><div class="gp-in"><i style="width:40%"></i><i style="width:70%"></i><i style="width:92%"></i><i style="width:86%"></i><b></b><i style="width:88%"></i><i style="width:72%"></i><i style="width:92%"></i><i style="width:60%"></i></div></div><div class="gp" style="aspect-ratio:0.56"><div class="gp-in"><i style="width:46%"></i><i style="width:76%"></i><i style="width:90%"></i><i style="width:70%"></i><b></b><i style="width:88%"></i><i style="width:72%"></i><i style="width:92%"></i><i style="width:60%"></i></div></div></div>
+      </div>
       <div id="drop-area" role="dialog" aria-modal="true" aria-labelledby="drop-title">
        <div class="drop-card">
         <div class="drop-head"><h2 id="drop-title">Carry your annotations over</h2><p>Add the annotated file, then the new one. Large PDFs are fine, up to 400&nbsp;MB combined.</p></div>
@@ -602,16 +623,14 @@
         <button type="button" class="tile removed" data-filter="removed" aria-pressed="false"><span class="tile-label">Removed</span><span class="tile-num" id="stat-removed">0</span></button>
       </div>
 
-      <div id="rail-empty">
-        <div class="detail-header">References</div>
-        <div class="rail-empty-box">References will list here, numbered, once both files are in.</div>
-        <hr class="rail-rule">
-        <div class="detail-header">How it works</div>
-        <ol class="how-list">
-          <li><span class="how-n">1</span><span><b>Add the annotated source.</b> A PDF moves its callouts. A Word doc places its references.</span></li>
-          <li><span class="how-n">2</span><span><b>Add the new PDF.</b> The design after your edits.</span></li>
-          <li><span class="how-n">3</span><span><b>Review the pins.</b> Adjust, add or undo anything before you download.</span></li>
-        </ol>
+      <div id="rail-empty" aria-hidden="true">
+        <div class="sk-head"></div>
+        <div class="sk-ref"><b class="sk-dot"></b><span class="sk-pill" style="width:84px"></span><i class="sk-chev"></i></div>
+        <div class="sk-ref"><b class="sk-dot"></b><span class="sk-pill" style="width:96px"></span><i class="sk-chev"></i></div>
+        <div class="sk-ref"><b class="sk-dot"></b><span class="sk-pill" style="width:84px"></span><i class="sk-chev"></i></div>
+        <div class="sk-ref"><b class="sk-dot"></b><span class="sk-pill" style="width:104px"></span><i class="sk-chev"></i></div>
+        <div class="sk-ref"><b class="sk-dot"></b><span class="sk-pill" style="width:90px"></span><i class="sk-chev"></i></div>
+        <div class="sk-ref"><b class="sk-dot"></b><span class="sk-pill" style="width:84px"></span><i class="sk-chev"></i></div>
       </div>
 
       <div class="list-hint" id="skipped-note" style="display:none;"></div>
