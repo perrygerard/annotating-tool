@@ -7,6 +7,7 @@ from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
 import dataclasses
 import remapper as _R
+from derivative import process_derivative
 from remapper import process_pdfs, write_pdf, AnnotationInfo, ANNOT_FREETEXT, ANNOT_SQUARE
 import boxsnap
 from placer import place_references
@@ -79,6 +80,7 @@ def remap():
     if not new_file.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Both files must be PDFs."}), 400
 
+    request_mode = request.form.get("mode", "update")
     job_id = str(uuid.uuid4())
     annotated_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_annotated.pdf")
     new_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_new.pdf")
@@ -96,7 +98,8 @@ def remap():
                 if j and j.get("status") == "processing":
                     j["percent"] = round(pct, 1)
                     j["progress"] = text
-            results = process_pdfs(annotated_path, new_path, output_path, prog)
+            fn = process_derivative if request_mode == "derivative" else process_pdfs
+            results = fn(annotated_path, new_path, output_path, prog)
             if not results.get("total"):
                 raise ValueError(
                     "No annotations were found in the first PDF. Upload the reviewer-annotated PDF (with live "

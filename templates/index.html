@@ -207,6 +207,8 @@
     .badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 99px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
     .badge.moved, .badge.reviewed { background: var(--success-bg); color: var(--success); }
     .badge.needs_look       { background: var(--warn-bg);    color: var(--warn); }
+    .mode-opt { display:flex; gap:10px; align-items:flex-start; max-width:640px; margin:12px auto 0; font-size:13px; line-height:1.45; color:var(--text-2, #555); cursor:pointer; }
+    .mode-opt input { margin-top:3px; }
     .badge.content_removed  { background: var(--removed-bg); color: var(--removed); }
     .badge.deleted  { background: var(--bench); color: var(--ink-light); }
 
@@ -559,6 +561,9 @@
           </div>
         </div>
         <div class="error-box" id="error-box"></div>
+        <label class="mode-opt" id="derive-opt" style="display:none;">
+          <input type="checkbox" id="derive-check"> <span>The new file is a <b>different piece</b> (shorter, rearranged or a new format), not an update of this one. Find each claim by its wording.</span>
+        </label>
         <div class="drop-actions">
           <p class="intro-text" id="intro-text">We pick the right workflow from the file you drop · up to 400 MB combined</p>
           <div class="template-link">Not sure how to lay out the reference list? <a href="/template.docx">Download the Word template</a></div>
@@ -623,24 +628,28 @@
   const MODES = {
     update: { btn: 'Carry annotations over', intro: 'Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.',
               title: 'Matching callouts to the new pages…', detail: 'Large PDFs can take up to a minute.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf' },
+    derive: { btn: 'Find claims in the new piece', intro: 'Each callout’s claim is searched for by wording in the new piece. Found claims get a pin; wording that changed is flagged to check; claims that were cut are listed as not in this piece.',
+              title: 'Finding each claim in the new piece…', detail: 'Pages without selectable text are read with OCR, which takes longer.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf', extra: { mode: 'derivative' } },
     add:    { btn: 'Place references', intro: 'Word doc detected. Each reference is placed from its superscript number or the copy it supports, with a References sidebar. Anything it can’t place is left for you to drag into position.',
               title: 'Placing references on the pages…', detail: 'Pages without selectable text are read with OCR, which takes longer.', endpoint: '/place', fa: 'reference_doc', fb: 'layout_pdf' },
   };
   const extOf = f => (f && f.name.toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || '';
   function applyMode() {
     const f = inputAnnotated.files[0];
-    mode = extOf(f) === 'docx' ? 'add' : 'update';
+    const deriveOn = document.getElementById('derive-check').checked;
+    mode = extOf(f) === 'docx' ? 'add' : (deriveOn ? 'derive' : 'update');
+    document.getElementById('derive-opt').style.display = (f && extOf(f) !== 'docx') ? '' : 'none';
     const c = MODES[mode];
     submitBtn.textContent = c.btn;
     document.getElementById('intro-text').textContent = f ? c.intro : 'We pick the right workflow from the file you drop · up to 400 MB combined';
-    document.getElementById('label-annotated').textContent = f ? (mode === 'add' ? 'Reference list (Word)' : 'Annotated PDF') : 'Annotated source';
+    document.getElementById('label-annotated').textContent = f ? (mode === 'add' ? 'Reference list (Word)' : mode === 'derive' ? 'Annotated source' : 'Annotated PDF') : 'Annotated source';
     document.getElementById('progress-title').textContent = c.title;
     document.getElementById('progress-detail').textContent = c.detail;
   }
   function clearZones() {
     ['zone-annotated','zone-new'].forEach(id => document.getElementById(id).classList.remove('has-file'));
     ['name-annotated','name-new'].forEach(id => document.getElementById(id).textContent = '');
-    inputAnnotated.value = ''; inputNew.value = ''; submitBtn.disabled = true;
+    inputAnnotated.value = ''; inputNew.value = ''; submitBtn.disabled = true; document.getElementById('derive-check').checked = false;
     applyMode();
   }
 
@@ -676,6 +685,7 @@
       }
     });
   }
+  document.getElementById('derive-check').addEventListener('change', applyMode);
   setupZone(inputAnnotated, 'zone-annotated', 'name-annotated');
   setupZone(inputNew, 'zone-new', 'name-new');
   function checkReady() { submitBtn.disabled = !(inputAnnotated.files[0] && inputNew.files[0]); }
@@ -699,6 +709,7 @@
     const cfg = MODES[mode];
     formData.append(cfg.fa, inputAnnotated.files[0]);
     formData.append(cfg.fb, inputNew.files[0]);
+    Object.entries(cfg.extra || {}).forEach(([k, v]) => formData.append(k, v));
 
     document.getElementById('progress-screen').style.display = 'flex';
     const titleEl = document.getElementById('progress-title'), detailEl = document.getElementById('progress-detail');
@@ -1245,6 +1256,11 @@
       numbered.forEach(({ entry, idx }) => listEl.appendChild(buildAnnItem(entry, idx)));
     }
     activeFilter = 'all';
+    // Claims that were not found in the new piece start out removed (kept in the list, left out of the export)
+    annRegistry.forEach((entry, idx) => {
+      if (entry.ann.method === 'absent' && entry.ann.parent_index == null) toggleDelete(idx, entry.ann.index);
+    });
+    histReset();
     updateFilters();
 
     // Updated-side images: load when near the viewport, and re-load sharper when zoomed
@@ -1428,7 +1444,7 @@
       }
     });
     const state = removed ? 'deleted' : worst;
-    const label = removed ? 'Removed' : state === 'reviewed' ? '✓ Adjusted' : (state === 'content_removed' && a.page_removed) ? '✕ Page removed' : (STATUS_LABELS[state] || state);
+    const label = removed ? (a.method === 'absent' ? 'Not in this piece' : 'Removed') : state === 'reviewed' ? '✓ Adjusted' : (state === 'content_removed' && a.page_removed) ? '✕ Page removed' : (STATUS_LABELS[state] || state);
     const badge = item.querySelector('.ann-status');
     badge.className = 'badge ann-status ' + state;
     badge.textContent = label;
@@ -1451,7 +1467,7 @@
     const pinsN = group.filter(m => m.e.ann.type !== 'Square').length, hasBox = group.some(m => m.e.ann.type === 'Square');
     item.querySelector('.act-flip').textContent = pinsN > 1 ? `↻ Turn pin ${a.number}` : '↻ Turn pin';
     const rm = item.querySelector('.act-remove');
-    rm.textContent = removed ? 'Restore' : (pinsN > 1 ? 'Remove both' : hasBox ? 'Remove pin & box' : 'Remove');
+    rm.textContent = removed ? (a.method === 'absent' ? 'Place it anyway' : 'Restore') : (pinsN > 1 ? 'Remove both' : hasBox ? 'Remove pin & box' : 'Remove');
     rm.classList.toggle('secondary', removed);
   }
 
