@@ -403,6 +403,9 @@
     #drop-area.busy .progress-card { display: block; }
     #drop-area.busy .drop-grid, #drop-area.busy .drop-foot, #drop-area.busy .error-box { display: none; }
     .progress-card .progress-bar-wrap, .progress-card .progress-meta { max-width: 420px; margin-left: auto; margin-right: auto; }
+    .progress-mode { max-width: 420px; margin: -8px auto 16px; font-size: .8rem; color: var(--ink-light); line-height: 1.45; }
+    .progress-mode[hidden] { display: none; }
+    .progress-mode .conf-link { font-size: inherit; display: block; margin: 4px auto 0; }
     .cancel-btn { margin-top: 18px; padding: 9px 20px; border: none; border-radius: 999px; background: #fff; color: #334155; font: inherit; font-size: .86rem; font-weight: 600; cursor: pointer; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px rgb(15 23 42 / .05); }
     .cancel-btn:hover { background: #f8fafc; }
     .drop-card { width: min(880px, 100%); margin: auto; background: #fff; border-radius: 20px; padding: 28px; box-shadow: 0 24px 60px -12px rgb(15 23 42 / .35), 0 0 0 1px rgb(15 23 42 / .06); display: flex; flex-direction: column; gap: 18px; }
@@ -563,6 +566,7 @@
         <div class="progress-card">
           <h3 id="progress-title">Matching callouts to the new pages…</h3>
           <p id="progress-detail">Large PDFs can take a few minutes.</p>
+          <div class="progress-mode" id="progress-mode" hidden><span id="progress-mode-text"></span> <button type="button" class="conf-link" id="progress-switch"></button></div>
           <div class="progress-bar-wrap">
             <div class="progress-bar" id="progress-bar"></div>
           </div>
@@ -743,6 +747,8 @@
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function submitJob(force) {
     hideError();
+    window._override = (force && pendingOverride) ? pendingOverride : null; pendingOverride = null;
+    document.getElementById('progress-mode').hidden = true;
     const formData = new FormData();
     const cfg = MODES[mode];
     formData.append(cfg.fa, inputAnnotated.files[0]);
@@ -804,6 +810,7 @@
           pollFails = 0;
           const d = await r.json();
           if (d.progress) document.getElementById('progress-detail').textContent = d.progress;
+          if (d.mode_used && mode !== 'add') showProgressMode(d);
           if (typeof d.percent === 'number') setBar(d.percent);
           if (d.status === 'done') {
             clearInterval(pollInterval); clearInterval(timer);
@@ -827,7 +834,19 @@
     }
   }
 
-  let cancelCtl = null;
+  let cancelCtl = null, pendingOverride = null;
+  function showProgressMode(d) {
+    const deriv = d.mode_used === 'derivative', box = document.getElementById('progress-mode');
+    document.getElementById('progress-mode-text').textContent =
+      (deriv ? 'Treating this as a derivative asset' : 'Treating this as an updated version') + (d.mode_reason ? ' · ' + d.mode_reason : '') ;
+    const b = document.getElementById('progress-switch');
+    b.textContent = deriv ? 'Run as updated version instead' : 'Run as derivative asset instead';
+    b.onclick = () => {
+      pendingOverride = { from: d.mode_used, to: deriv ? 'update' : 'derivative', stage: 'processing' };
+      cancelJob(); submitJob(deriv ? 'update' : 'derivative');
+    };
+    box.hidden = false;
+  }
   function setBusy(on) { document.getElementById('drop-area').classList.toggle('busy', on); }
   function cancelJob() {
     const c = cancelCtl; if (!c) { setBusy(false); return; }
@@ -949,7 +968,7 @@
     document.getElementById('conf-mode-text').textContent = (results.mode_auto ? 'Detected ' : 'Matched as ') + (deriv ? 'a derivative asset' : 'an updated version') + '. ' + (results.mode_reason || '');
     const b = document.getElementById('conf-rerun');
     b.textContent = deriv ? 'Re-run as updated version' : 'Re-run as derivative asset';
-    b.onclick = () => { resetForm(true); submitJob(deriv ? 'update' : 'derivative'); };
+    b.onclick = () => { pendingOverride = { from: lastMode, to: deriv ? 'update' : 'derivative', stage: 'review' }; resetForm(true); submitJob(deriv ? 'update' : 'derivative'); };
     box.hidden = false;
   }
   function showResults(results) {
@@ -1944,7 +1963,7 @@
     });
     const by = {}; pins.forEach(p => { if (!p.sub) by[p.action] = (by[p.action] || 0) + 1; });
     return { schema: 1, exported_at: new Date().toISOString(), tool: 'Carryover',
-      mode_used: r.mode_used || (mode === 'add' ? 'place' : null), mode_auto: !!r.mode_auto, mode_reason: r.mode_reason || '',
+      mode_used: r.mode_used || (mode === 'add' ? 'place' : null), mode_auto: !!r.mode_auto, mode_reason: r.mode_reason || '', mode_override: window._override || null,
       auto_counts: { total: r.total, moved: r.moved, needs_look: r.needs_look, content_removed: r.content_removed },
       processing_seconds: (window._resultsAt && window._jobStart) ? Math.round((window._resultsAt - window._jobStart) / 1000) : null,
       review_seconds: window._resultsAt ? Math.round((Date.now() - window._resultsAt) / 1000) : null,

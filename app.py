@@ -73,7 +73,7 @@ def _shape(path):
     import pymupdf
     d = pymupdf.open(path)
     try:
-        ratios = []
+        ratios, widths = [], []
         for pg in d:
             w = pg.rect.width
             try:
@@ -83,7 +83,9 @@ def _shape(path):
             except Exception:
                 pass
             ratios.append(w / max(1.0, pg.rect.height))
-        return len(d), (statistics.median(ratios) if ratios else 1.0)
+            widths.append(w)
+        return (len(d), (statistics.median(ratios) if ratios else 1.0),
+                (statistics.median(widths) if widths else 1.0))
     finally:
         d.close()
 
@@ -93,14 +95,17 @@ def detect_relationship(old_path, new_path):
     Returns (mode, reason). A revision keeps roughly the same number of pages; a derivative is
     usually much shorter or longer, or a different page shape."""
     try:
-        n_old, r_old = _shape(old_path)
-        n_new, r_new = _shape(new_path)
+        n_old, r_old, w_old = _shape(old_path)
+        n_new, r_new, w_new = _shape(new_path)
     except Exception:
         return "update", "Could not compare the files, so they were treated as versions of the same document."
     ratio = min(n_old, n_new) / max(n_old, n_new, 1)
     if ratio < 0.6 and abs(n_old - n_new) >= 3:
         return "derivative", f"Page counts differ a lot ({n_old} vs {n_new})."
-    if abs(r_old - r_new) / max(r_old, 1e-6) > 0.25:
+    # Same page count and same width: a taller or shorter page just means content was added or removed
+    # (long single-page layouts), so it is still a version of the same document.
+    same_width = abs(w_old - w_new) / max(w_old, 1e-6) < 0.05
+    if not (n_old == n_new and same_width) and abs(r_old - r_new) / max(r_old, 1e-6) > 0.25:
         return "derivative", "The page shape is different."
     return "update", f"Same kind of document ({n_old} vs {n_new} pages)."
 
@@ -138,11 +143,12 @@ def remap():
                 if j and j.get("status") == "processing":
                     j["percent"] = round(pct, 1)
                     j["progress"] = text
-            used, reason, auto = request_mode, "You chose this.", False
+            used, reason, auto = request_mode, "You switched to this.", False
             if request_mode == "auto":
                 auto = True
                 used, reason = detect_relationship(annotated_path, new_path)
                 prog(1, "Comparing the two files…")
+            jobs[job_id].update(mode_used=used, mode_reason=reason, mode_auto=auto)   # shown while processing
             fn = process_derivative if used == "derivative" else process_pdfs
             results = fn(annotated_path, new_path, output_path, prog)
             if _cancelled(job_id):
