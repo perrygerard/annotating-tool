@@ -151,6 +151,7 @@ def remap():
             jobs[job_id].update(mode_used=used, mode_reason=reason, mode_auto=auto)   # shown while processing
             fn = process_derivative if used == "derivative" else process_pdfs
             results = fn(annotated_path, new_path, output_path, prog)
+            _free_pdf_cache()
             if _cancelled(job_id):
                 raise Cancelled()
             if auto and used == "update" and results.get("total", 0) >= 5 \
@@ -485,6 +486,7 @@ def confirm(job_id):
             tracking_bytes = _json.dumps(tracking, separators=(",", ":")).encode("utf-8")[:2_000_000]
         write_pdf(eff, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides, sides=sides, boxes=boxes,
                   tracking=tracking_bytes)
+        _free_pdf_cache()
         # Update the results annotation list to reflect deletions
         results = job["results"]
         results["annotations"] = [
@@ -499,11 +501,28 @@ def confirm(job_id):
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
-MAX_PREVIEW_PIXELS = 36_000_000    # keeps one render's memory bounded on very tall pages
+MAX_PREVIEW_PIXELS = 14_000_000    # keeps one render's memory bounded on very tall pages
+# The review screen asks for ~90 page images at once; on a small server (512 MB) rendering many big pages in
+# parallel is what runs it out of memory, so only a couple render at a time and the rest wait their turn.
+_render_gate = threading.BoundedSemaphore(2)
+
+
+def _free_pdf_cache():
+    """MuPDF keeps every decoded image it has drawn (hundreds of MB on big PDFs). Drop that cache so
+    the server's memory stays flat on a small instance."""
+    try:
+        fitz.TOOLS.store_shrink(100)
+    except Exception:
+        pass
 
 
 def _render_page_png(pdf_path, page_num, target_width_px=640, max_height_px=8000):
     """Render a PDF page scaled so its width fits target_width_px."""
+    with _render_gate:
+        return _render_page_png_locked(pdf_path, page_num, target_width_px, max_height_px)
+
+
+def _render_page_png_locked(pdf_path, page_num, target_width_px, max_height_px):
     doc = fitz.open(pdf_path)
     try:
         if page_num < 1 or page_num > len(doc):
@@ -514,9 +533,12 @@ def _render_page_png(pdf_path, page_num, target_width_px=640, max_height_px=8000
         scale = min(scale, (MAX_PREVIEW_PIXELS / (page.rect.width * page.rect.height)) ** 0.5)
         mat = fitz.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=mat, alpha=False)
-        return pix.tobytes("png")
+        data = pix.tobytes("png")
+        del pix
+        return data
     finally:
         doc.close()
+        _free_pdf_cache()
 
 
 @app.route("/preview/<job_id>/<int:page_num>")
@@ -538,9 +560,9 @@ def preview(job_id, page_num):
     try:
         # ?w= asks for a sharper render (zoom / retina); tall pages are capped by height and pixel count
         w = request.args.get("w", type=int) or 640
-        w = max(320, min(w, 2560))
+        w = max(320, min(w, 1920))
         png_bytes = _render_page_png(output_path, page_num, target_width_px=w,
-                                     max_height_px=8000 if w <= 640 else 16000)
+                                     max_height_px=8000 if w <= 640 else 12000)
         if png_bytes is None:
             abort(404)
         from flask import Response
