@@ -1957,7 +1957,7 @@
       }
       pins.push({ index: k, number: a.number == null ? null : a.number, page: pg.new_page_num || pg.page_num || null,
         sub: a.sub_label || '', text: (a.content || '').slice(0, 60),
-        auto: a.isNew ? null : { status: a.status, method: a.method, confidence: a.confidence, x: round(ox), y: round(oy) },
+        auto: a.isNew ? null : { status: a.status, method: a.method, confidence: a.confidence, x: round(ox), y: round(oy), snapped_pt: a.snapped || 0 },
         action, moved_pt: Math.round(dist), final: ov ? [round(ov[0]), round(ov[1])] : null,
         turned: sideOverrides.has(k), text_edited: contentEdits.has(k), adjusted_flag: reviewedIndices.has(k) });
     });

@@ -61,6 +61,8 @@ class AnnotationInfo:
     match_note: str = ""
     parent_index: Optional[int] = None   # set on a 2nd-target arrow: index of its callout
     sub_label: str = ""                 # 'b', 'c'... shown after the number on secondary pins
+    snap_point: Optional[tuple] = None   # pin point moved onto nearby content (see _snap_to_content)
+    snap_dist: float = 0.0               # how far it moved, in points
 
 
 def get_words_around_rect(page: fitz.Page, target_rect: fitz.Rect, window: int = 10):
@@ -1370,7 +1372,9 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, prog
             old_pw, old_ph = old_page.rect.width, old_page.rect.height
 
         overlay_annots = []
-        auto_pg = _auto_sides(annots_by_page[(page_num, out_pn)], pw, dot_r_pg * PIN_SCALE, S_pg, _page_words(page, pw), ph)
+        ink = _ink_for(page, pw, ph)
+        _snap_to_content(annots_by_page[(page_num, out_pn)], ink, S_pg)
+        auto_pg = _auto_sides(annots_by_page[(page_num, out_pn)], pw, dot_r_pg * PIN_SCALE, S_pg, ink, ph)
         for info in annots_by_page[(page_num, out_pn)]:
             new_r = info.new_rect if info.new_rect else info.rect
             old_r = info.rect  # original position in old PDF
@@ -1424,6 +1428,7 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, prog
                 "dot_x": dot_xy[0] if dot_xy else None,
                 "dot_y": dot_xy[1] if dot_xy else None,
                 "pin_dir": pin_dir,
+                "snapped": round(info.snap_dist, 1),
                 "parent_index": info.parent_index,
                 "sub_label": info.sub_label,
             })
@@ -1509,32 +1514,101 @@ def _pin_dir(info):
     return 0 if _pin_side(info) >= 0 else 2
 
 
-def _page_words(page, pw):
-    """Word boxes on the page itself (not the sidebar), used to keep pin rings off the text."""
+class _Ink:
+    """Where the page has content (text, pictures, card edges), found from the rendered pixels so it works
+    on flattened pages with no real text. A pixel counts as content when it differs from its neighbours."""
+    K = 0.5          # raster pixels per point
+
+    def __init__(self, page, pw, ph):
+        import numpy as np
+        self.np = np
+        self.pw, self.ph = pw, ph
+        pm = page.get_pixmap(matrix=fitz.Matrix(self.K, self.K), colorspace=fitz.csGRAY,
+                             clip=fitz.Rect(0, 0, pw, ph), annots=False)
+        a = np.frombuffer(pm.samples, dtype=np.uint8).reshape(pm.height, pm.width).astype(np.int16)
+        g = np.zeros(a.shape, dtype=bool)
+        g[:, 1:] |= np.abs(np.diff(a, axis=1)) > 24
+        g[1:, :] |= np.abs(np.diff(a, axis=0)) > 24
+        m = g.copy()                                   # thicken so a line of text reads as one block
+        for _ in range(2):
+            n = m.copy()
+            n[1:, :] |= m[:-1, :]; n[:-1, :] |= m[1:, :]; n[:, 1:] |= m[:, :-1]; n[:, :-1] |= m[:, 1:]
+            m = n
+        self.m = m
+        self.h, self.w = m.shape
+
+    def cover(self, rect):
+        """Share (0..1) of rect that sits on content."""
+        x0 = max(0, int(rect.x0 * self.K)); x1 = min(self.w, int(rect.x1 * self.K) + 1)
+        y0 = max(0, int(rect.y0 * self.K)); y1 = min(self.h, int(rect.y1 * self.K) + 1)
+        if x1 <= x0 or y1 <= y0:
+            return 0.0
+        return float(self.m[y0:y1, x0:x1].mean())
+
+    def on(self, x, y, tol):
+        return self.cover(fitz.Rect(x - tol, y - tol, x + tol, y + tol)) > 0.0
+
+    def nearest(self, x, y, reach, ux, uy):
+        """Content point near (x, y), within `reach` pt, preferring the way the arrow was heading."""
+        np = self.np
+        x0 = max(0, int((x - reach) * self.K)); x1 = min(self.w, int((x + reach) * self.K) + 1)
+        y0 = max(0, int((y - reach) * self.K)); y1 = min(self.h, int((y + reach) * self.K) + 1)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        ys, xs = np.nonzero(self.m[y0:y1, x0:x1])
+        if xs.size == 0:
+            return None
+        px = (xs + x0) / self.K; py = (ys + y0) / self.K
+        dx, dy = px - x, py - y
+        d = np.hypot(dx, dy)
+        ok = d <= reach
+        if not ok.any():
+            return None
+        px, py, dx, dy, d = px[ok], py[ok], dx[ok], dy[ok], d[ok]
+        cos = (dx * ux + dy * uy) / np.maximum(d, 1e-6) if (ux or uy) else np.zeros_like(d)
+        score = d * (1.5 - 0.5 * cos)                 # ahead of the arrow beats behind it
+        i = int(np.argmin(score))
+        return float(px[i]), float(py[i]), float(d[i])
+
+
+def _ink_for(page, pw, ph):
     try:
-        return [fitz.Rect(w[:4]) for w in page.get_text("words") if w[0] < pw]
+        return _Ink(page, pw, ph)
     except Exception:
-        return []
+        return None
 
 
-def _text_cover(words, rect):
-    """Area of `rect` that sits on words."""
-    tot = 0.0
-    for w in words:
-        if w.x1 < rect.x0 or w.x0 > rect.x1 or w.y1 < rect.y0 or w.y0 > rect.y1:
+def _snap_to_content(infos, ink, S):
+    """An arrow tip can sit in the gap beside a card, under a headline or next to a picture and still read
+    fine as a line with a head. A pin has no line, so a point on empty space looks random. Move such a
+    point to the nearest content, preferring what the arrow was heading toward. Points already on content
+    stay exactly where they are; nothing moves further than ~100pt (scaled with the page)."""
+    if ink is None:
+        return
+    reach, tol = 100.0 * S, 3.0 * S
+    for info in infos:
+        if info.annot_type[1] == "Square" or info.match_method == "absent" or info.status == "content_removed":
             continue
-        i = w & rect
-        if not i.is_empty:
-            tot += i.width * i.height
-    return tot
+        x, y = _anchor_point(info)
+        if ink.on(x, y, tol):
+            continue
+        ux = uy = 0.0
+        v = info.vertices or []
+        if len(v) >= 2:
+            dx, dy = v[0][0] - v[-1][0], v[0][1] - v[-1][1]
+            n = math.hypot(dx, dy)
+            if n > 1e-6:
+                ux, uy = dx / n, dy / n
+        hit = ink.nearest(x, y, reach, ux, uy)
+        if hit:
+            info.snap_point = (hit[0], hit[1]); info.snap_dist = hit[2]
 
 
-def _auto_sides(infos, pw, r, S, words=None, ph=None):
+def _auto_sides(infos, pw, r, S, ink=None, ph=None):
     """Default pin direction per annotation (0..3). Each pin tries the four turns and takes the one whose
     ring and stem cover the least text and clear the neighbouring pins; the side the reviewer's box was on
     wins ties."""
     placed, out = [], {}
-    words = words or []
     order = sorted(infos, key=lambda i: (_anchor_point(i)[1], _anchor_point(i)[0]))
     for info in order:
         pref = _pin_dir(info)
@@ -1546,10 +1620,10 @@ def _auto_sides(infos, pw, r, S, words=None, ph=None):
             cy = c[1] if ph is None else max(r + 1, min(c[1], ph - r - 1))
             clash = any(math.hypot(cx - o[0], cy - o[1]) < 2.05 * r for o in placed)
             cover = 0.0
-            if words:
+            if ink is not None:
                 ring = fitz.Rect(cx - r, cy - r, cx + r, cy + r)
                 stem = fitz.Rect(min(px, cx) - 1, min(py, cy) - 1, max(px, cx) + 1, max(py, cy) + 1)
-                cover = (_text_cover(words, ring) + 0.5 * _text_cover(words, stem)) / (r * r)
+                cover = 4.0 * ink.cover(ring) + 1.0 * ink.cover(stem)
             cost = (1000 if clash else 0) + cover + rank * 0.15
             if best is None or cost < best[0]:
                 best = (cost, d, (cx, cy))
@@ -1602,7 +1676,9 @@ def _out_page(info):
 
 
 def _anchor_point(info):
-    """Where the dot goes: remapped tip point, else raw tip, else rect centre."""
+    """Where the dot goes: the snapped point, else remapped tip point, else raw tip, else rect centre."""
+    if getattr(info, "snap_point", None):
+        return info.snap_point
     if info.new_vertices:
         return info.new_vertices[0]
     if info.tip_point is not None:
@@ -1961,7 +2037,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
         # ── Draw numbered dots on page content ──────────────────────────────
         PIN_R = DOT_R * PIN_SCALE
         pins_on_page = page_pins.get(page_num, [])
-        auto_sd = _auto_sides(pins_on_page, pw, PIN_R, S, _page_words(page, pw), ph) if draw_dots else {}
+        auto_sd = _auto_sides(pins_on_page, pw, PIN_R, S, _ink_for(page, pw, ph), ph) if draw_dots else {}
         for info in pins_on_page:
             num = _pin_label(info, global_num[(_out_page(info), info.index)])
 
