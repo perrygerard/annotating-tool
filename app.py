@@ -95,11 +95,15 @@ def remap():
         try:
             def prog(pct, text):
                 j = jobs.get(job_id)
+                if j and j.get("cancelled"):
+                    raise Cancelled()
                 if j and j.get("status") == "processing":
                     j["percent"] = round(pct, 1)
                     j["progress"] = text
             fn = process_derivative if request_mode == "derivative" else process_pdfs
             results = fn(annotated_path, new_path, output_path, prog)
+            if _cancelled(job_id):
+                raise Cancelled()
             if not results.get("total"):
                 raise ValueError(
                     "No annotations were found in the first PDF. Upload the reviewer-annotated PDF (with live "
@@ -118,6 +122,13 @@ def remap():
                 "preview_path": preview_path,
                 "_all_annots": all_annots,  # kept server-side only, not sent to client
             }
+        except Cancelled:
+            jobs[job_id] = {"status": "cancelled"}
+            for p in [annotated_path, new_path]:
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
         except Exception as e:
             import traceback
             jobs[job_id] = {"status": "error", "message": friendly_error(e), "trace": traceback.format_exc()}
@@ -129,6 +140,22 @@ def remap():
 
     threading.Thread(target=run_job).start()
     return jsonify({"job_id": job_id})
+
+
+class Cancelled(Exception):
+    pass
+
+
+def _cancelled(job_id):
+    return bool((jobs.get(job_id) or {}).get("cancelled"))
+
+
+@app.route("/cancel/<job_id>", methods=["POST"])
+def cancel(job_id):
+    job = jobs.get(job_id)
+    if job and job.get("status") == "processing":
+        job["cancelled"] = True
+    return jsonify(ok=True)
 
 
 @app.route("/place", methods=["POST"])
@@ -154,6 +181,8 @@ def place():
 
     def progress(done, total):
         job = jobs.get(job_id)
+        if job and job.get("cancelled"):
+            raise Cancelled()
         if job and job.get("status") == "processing":
             job["progress"] = f"Reading page {done} of {total}…"
             job["percent"] = round(85 * done / max(1, total), 1)
@@ -161,6 +190,8 @@ def place():
     def run_job():
         try:
             results = place_references(doc_path, pdf_path, output_path, progress)
+            if _cancelled(job_id):
+                raise Cancelled()
             all_annots = results.pop("_all_annots", [])
             new_pdf_path_stored = results.pop("_new_pdf_path", pdf_path)
             preview_path = results.pop("_preview_path", None)
@@ -173,6 +204,13 @@ def place():
                 "preview_path": preview_path,
                 "_all_annots": all_annots,
             }
+        except Cancelled:
+            jobs[job_id] = {"status": "cancelled"}
+            for p in [doc_path, pdf_path]:
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
         except Exception as e:
             import traceback
             jobs[job_id] = {"status": "error", "message": friendly_error(e), "trace": traceback.format_exc()}

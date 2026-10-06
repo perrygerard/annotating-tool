@@ -302,7 +302,7 @@
     html[data-theme="tailwind"] .submit-btn, html[data-theme="tailwind"] .confirm-btn { border-radius: 999px; font-weight: 600; box-shadow: 0 1px 2px rgb(15 23 42 / .2); }
     html[data-theme="tailwind"] .submit-btn { padding: 12px; }
     html[data-theme="tailwind"] .confirm-btn { padding: 9px 18px; }
-    html[data-theme="tailwind"] .progress-bar { background: #0ea5e9; }
+    html[data-theme="tailwind"] .progress-bar { background: #4449F2; }
     html[data-theme="tailwind"] .pages-panel { background: #F8FAFC; padding: 0 56px 144px; }
     html[data-theme="tailwind"] .col-labels { position: sticky; top: 0; z-index: 6; gap: 0; margin: 0 -56px 44px; background: #fff; border-bottom: 1px solid #e2e8f0; }
     html[data-theme="tailwind"] .col-label { font-family: var(--body); font-weight: 600; font-size: 0.7rem; letter-spacing: .09em; text-transform: uppercase; color: #475569; background: transparent; border-radius: 0; box-shadow: none; padding: 11px 10px; }
@@ -378,7 +378,7 @@
     .zoom-group .zoom-val:hover:not(:disabled) { background: #f1f5f9; }
     .cl-right .tb-box.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1px #0f172a, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .cl-right .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
-    .show-orig { display: none; }
+    .show-orig { display: none !important; }
     .toolbar { flex: none; display: flex; align-items: center; gap: 10px; min-height: 52px; box-sizing: border-box; padding: 0 28px; background: #fff; border-bottom: 1px solid #e2e8f0; }
     .tb-group { display: flex; align-items: center; gap: 10px; }
     .tb-sep { width: 1px; height: 22px; background: #e2e8f0; }
@@ -393,15 +393,22 @@
     .toolbar .tb-add.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1px #0f172a, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .toolbar .tb-box.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1px #0f172a, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .toolbar .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
-    body.add-mode .tb-orig { display: none; }
+    body.add-mode #orig-btn { display: none; }
     body:not(.has-results) .reset-btn { display: none; }
     #drop-area { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; background: rgb(15 23 42 / .16); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
     #drop-area.drop-area-hidden { display: none; }
+    #drop-area .progress-card { display: none; border: none; box-shadow: none; background: transparent; max-width: none; padding: 72px 24px 56px; }
+    #drop-area.busy .progress-card { display: block; }
+    #drop-area.busy .drop-grid, #drop-area.busy .drop-foot, #drop-area.busy .error-box { display: none; }
+    .progress-card .progress-bar-wrap, .progress-card .progress-meta { max-width: 420px; margin-left: auto; margin-right: auto; }
+    .cancel-btn { margin-top: 18px; padding: 9px 20px; border: none; border-radius: 999px; background: #fff; color: #334155; font: inherit; font-size: .86rem; font-weight: 600; cursor: pointer; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px rgb(15 23 42 / .05); }
+    .cancel-btn:hover { background: #f8fafc; }
     .drop-card { width: min(880px, 100%); margin: auto; background: #fff; border-radius: 20px; padding: 28px; box-shadow: 0 24px 60px -12px rgb(15 23 42 / .35), 0 0 0 1px rgb(15 23 42 / .06); display: flex; flex-direction: column; gap: 18px; }
     .drop-head { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 6px 0 4px; }
     .drop-logo { height: 40px; width: auto; max-width: 100%; }
-    .drop-head p { margin: 0; font-size: 18px; font-weight: 500; line-height: 1.4; color: #64748b; }
+    .drop-head p { margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4; color: #64748b; }
     .drop-actions[hidden] { display: none !important; }
+    body:not(.has-results) header { display: none; }
     .drop-note { font-size: .82rem; color: #94a3b8; margin-right: auto; }
     .drop-act { display: flex; align-items: center; gap: 18px; }
     .drop-foot { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
@@ -470,7 +477,7 @@
     .orig-none .page-pair { grid-template-columns: minmax(0, 1fr); }
     .orig-none .page-pair > .page-side:first-child { display: none; }
     .add-mode .tile.removed { display: none; }
-    .orig-collapsed .show-orig { display: inline-flex; }
+    .orig-collapsed .show-orig { display: inline-flex !important; }
     .orig-collapsed .col-labels { grid-template-columns: minmax(0, 1fr); }
     .orig-collapsed .col-label:first-child { display: none; }
     .orig-collapsed .page-pair { grid-template-columns: minmax(0, 1fr); }
@@ -525,19 +532,6 @@
   <button type="button" class="dl-x" id="dl-x" aria-label="Dismiss" onclick="dlHide()">×</button>
 </div>
 
-<!-- ── Progress screen ── -->
-<div id="progress-screen">
-  <div class="progress-card">
-    <h3 id="progress-title">Matching callouts to the new pages…</h3>
-    <p id="progress-detail">Large PDFs can take a few minutes.</p>
-    <div class="progress-bar-wrap">
-      <div class="progress-bar" id="progress-bar"></div>
-    </div>
-    <div class="progress-meta"><span id="progress-pct">0%</span><span id="progress-elapsed"></span></div>
-    <p class="progress-hint" id="progress-hint"></p>
-  </div>
-</div>
-
 <!-- ── Results screen ── -->
 <div id="results-screen" class="visible">
   <div class="toolbar" id="toolbar" role="toolbar" aria-label="Review actions">
@@ -550,17 +544,6 @@
     <div class="tb-group">
       <button type="button" class="cl-btn" data-act="undo" id="undo-btn" disabled title="Undo (Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
       <button type="button" class="cl-btn" data-act="redo" id="redo-btn" disabled title="Redo (Shift+Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>Redo</button>
-    </div>
-    <span class="tb-sep" aria-hidden="true"></span>
-    <div class="tb-group" role="group" aria-label="Zoom the updated pages">
-      <div class="zoom-group">
-        <button type="button" class="cl-btn icon" data-act="zoom-out" aria-label="Zoom out" title="Zoom out" disabled>
-          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
-        <button type="button" class="cl-btn zoom-val" data-act="zoom-reset" aria-label="Reset zoom" title="Reset zoom" id="zoom-val" disabled>100%</button>
-        <button type="button" class="cl-btn icon" data-act="zoom-in" aria-label="Zoom in" title="Zoom in" disabled>
-          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M6 1.5v9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
-      </div>
-      <button type="button" class="cl-btn tb-orig" data-act="toggle-orig" id="orig-btn" disabled>Hide original</button>
     </div>
   </div>
   <div class="results-layout">
@@ -575,6 +558,16 @@
       <div id="drop-area" role="dialog" aria-modal="true" aria-labelledby="drop-title">
        <div class="drop-card">
         <div class="drop-head" id="drop-title" role="heading" aria-level="1"><svg class="drop-logo" role="img" aria-label="Carryover" width="248" height="40" viewBox="0 0 248 40" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M19.9092 0C24.146 1.19766e-05 28.0777 1.33137 31.3057 3.59766C31.7091 3.88093 31.684 4.4464 31.38 4.8345C30.8054 5.56806 30.2715 6.33502 29.7817 7.13203C29.0659 8.2968 27.7333 9.1418 26.5518 8.4541C24.5983 7.31679 22.3306 6.667 19.9092 6.66699C12.5788 6.66699 6.63672 12.6362 6.63672 20C6.63672 27.3638 12.5788 33.333 19.9092 33.333C22.3306 33.333 24.5983 32.6832 26.5518 31.5459C27.7335 30.8581 29.0659 31.7023 29.7818 32.8672C30.2714 33.664 30.8052 34.4306 31.3796 35.164C31.6838 35.5524 31.7095 36.1188 31.3057 36.4023C28.0777 38.6686 24.146 40 19.9092 40C8.91368 40 0 31.0457 0 20C1.92399e-07 8.9543 8.91368 0 19.9092 0Z" fill="url(#mg0)"/><path d="M23.077 21.5386C22.2274 21.5386 21.5386 20.8498 21.5386 20.0001C21.5386 19.1504 22.2274 18.4617 23.077 18.4617L40.0001 18.4617C40.8498 18.4617 41.5386 19.1504 41.5386 20.0001C41.5386 20.8498 40.8498 21.5386 40.0001 21.5386L23.077 21.5386Z" fill="#EC60FB"/><ellipse cx="20.0002" cy="19.9999" rx="9.23077" ry="9.23077" transform="rotate(180 20.0002 19.9999)" fill="url(#mg1)"/><ellipse cx="40.0001" cy="20.0001" rx="4.61538" ry="4.61539" transform="rotate(180 40.0001 20.0001)" fill="#EC60FB"/><path d="M234.81 29.2305C234.618 29.2305 234.47 29.1782 234.366 29.0736C234.261 28.9516 234.209 28.8034 234.209 28.629V11.5505C234.209 11.3587 234.261 11.2105 234.366 11.1059C234.47 10.9839 234.618 10.9229 234.81 10.9229H241.192C243.162 10.9229 244.723 11.3849 245.873 12.309C247.024 13.2331 247.6 14.6018 247.6 16.4152C247.6 17.7577 247.26 18.8562 246.58 19.7105C245.917 20.5475 245.01 21.1316 243.86 21.4629L247.887 28.4198C247.94 28.5244 247.966 28.6203 247.966 28.7075C247.966 28.847 247.905 28.969 247.783 29.0736C247.678 29.1782 247.556 29.2305 247.416 29.2305H246.161C245.865 29.2305 245.647 29.1521 245.507 28.9952C245.368 28.8382 245.246 28.6813 245.141 28.5244L241.349 21.8813H236.772V28.629C236.772 28.8034 236.711 28.9516 236.589 29.0736C236.484 29.1782 236.336 29.2305 236.144 29.2305H234.81ZM236.772 19.6582H241.087C242.395 19.6582 243.371 19.388 244.016 18.8475C244.662 18.2895 244.984 17.47 244.984 16.389C244.984 15.3254 244.662 14.5146 244.016 13.9567C243.389 13.3987 242.412 13.1198 241.087 13.1198H236.772V19.6582Z" fill="#262878"/><path d="M213.719 29.2305C213.527 29.2305 213.379 29.1782 213.274 29.0736C213.17 28.9516 213.117 28.8034 213.117 28.629V11.5505C213.117 11.3587 213.17 11.2105 213.274 11.1059C213.379 10.9839 213.527 10.9229 213.719 10.9229H224.52C224.712 10.9229 224.86 10.9839 224.965 11.1059C225.07 11.2105 225.122 11.3587 225.122 11.5505V12.5444C225.122 12.7362 225.07 12.8844 224.965 12.989C224.86 13.0936 224.712 13.1459 224.52 13.1459H215.628V18.8736H223.945C224.137 18.8736 224.285 18.9346 224.39 19.0567C224.494 19.1613 224.546 19.3095 224.546 19.5013V20.469C224.546 20.6434 224.494 20.7916 224.39 20.9136C224.285 21.0182 224.137 21.0705 223.945 21.0705H215.628V27.0075H224.73C224.921 27.0075 225.07 27.0598 225.174 27.1644C225.279 27.269 225.331 27.4172 225.331 27.609V28.629C225.331 28.8034 225.279 28.9516 225.174 29.0736C225.07 29.1782 224.921 29.2305 224.73 29.2305H213.719Z" fill="#262878"/><path d="M196.214 29.2305C195.952 29.2305 195.743 29.1695 195.586 29.0475C195.447 28.9254 195.333 28.7598 195.246 28.5505L189.414 11.7336C189.379 11.629 189.362 11.5331 189.362 11.4459C189.362 11.3064 189.414 11.1844 189.519 11.0798C189.623 10.9752 189.745 10.9229 189.885 10.9229H191.245C191.454 10.9229 191.611 10.9839 191.715 11.1059C191.837 11.2105 191.907 11.3064 191.925 11.3936L197.051 26.2229L202.177 11.3936C202.212 11.3064 202.282 11.2105 202.386 11.1059C202.491 10.9839 202.648 10.9229 202.857 10.9229H204.217C204.356 10.9229 204.479 10.9752 204.583 11.0798C204.705 11.1844 204.766 11.3064 204.766 11.4459C204.766 11.5331 204.749 11.629 204.714 11.7336L198.855 28.5505C198.786 28.7598 198.672 28.9254 198.515 29.0475C198.376 29.1695 198.175 29.2305 197.914 29.2305H196.214Z" fill="#262878"/><path d="M174.919 29.4921C173.437 29.4921 172.164 29.2393 171.1 28.7337C170.037 28.2106 169.217 27.4173 168.642 26.3537C168.066 25.2727 167.744 23.9214 167.674 22.2998C167.657 21.5327 167.648 20.8004 167.648 20.1029C167.648 19.388 167.657 18.647 167.674 17.8798C167.744 16.2757 168.075 14.9419 168.668 13.8783C169.278 12.7973 170.115 11.9952 171.179 11.4721C172.26 10.9316 173.506 10.6614 174.919 10.6614C176.348 10.6614 177.595 10.9316 178.659 11.4721C179.74 11.9952 180.585 12.7973 181.196 13.8783C181.806 14.9419 182.137 16.2757 182.189 17.8798C182.224 18.647 182.242 19.388 182.242 20.1029C182.242 20.8004 182.224 21.5327 182.189 22.2998C182.137 23.9214 181.815 25.2727 181.222 26.3537C180.646 27.4173 179.827 28.2106 178.763 28.7337C177.7 29.2393 176.418 29.4921 174.919 29.4921ZM174.919 27.2691C176.261 27.2691 177.351 26.868 178.188 26.066C179.042 25.2639 179.504 23.965 179.574 22.1691C179.609 21.3845 179.626 20.687 179.626 20.0768C179.626 19.4491 179.609 18.7516 179.574 17.9845C179.539 16.7814 179.313 15.805 178.894 15.0552C178.493 14.3055 177.953 13.7562 177.273 13.4075C176.593 13.0588 175.808 12.8845 174.919 12.8845C174.064 12.8845 173.297 13.0588 172.617 13.4075C171.937 13.7562 171.388 14.3055 170.969 15.0552C170.568 15.805 170.342 16.7814 170.289 17.9845C170.272 18.7516 170.263 19.4491 170.263 20.0768C170.263 20.687 170.272 21.3845 170.289 22.1691C170.359 23.965 170.821 25.2639 171.676 26.066C172.53 26.868 173.611 27.2691 174.919 27.2691Z" fill="#262878"/><path d="M152.474 29.2305C152.3 29.2305 152.151 29.1782 152.029 29.0736C151.925 28.9516 151.873 28.8034 151.873 28.629V22.4567L145.569 11.7859C145.552 11.7336 145.535 11.6813 145.517 11.629C145.5 11.5767 145.491 11.5157 145.491 11.4459C145.491 11.3064 145.543 11.1844 145.648 11.0798C145.753 10.9752 145.875 10.9229 146.014 10.9229H147.374C147.531 10.9229 147.67 10.9664 147.793 11.0536C147.915 11.1234 148.002 11.228 148.054 11.3675L153.154 19.8413L158.254 11.3675C158.341 11.228 158.437 11.1234 158.542 11.0536C158.664 10.9664 158.803 10.9229 158.96 10.9229H160.294C160.451 10.9229 160.582 10.9752 160.686 11.0798C160.791 11.1844 160.843 11.3064 160.843 11.4459C160.843 11.5157 160.835 11.5767 160.817 11.629C160.8 11.6813 160.774 11.7336 160.739 11.7859L154.462 22.4567V28.629C154.462 28.8034 154.401 28.9516 154.279 29.0736C154.174 29.1782 154.026 29.2305 153.834 29.2305H152.474Z" fill="#262878"/><path d="M125.853 29.2305C125.661 29.2305 125.513 29.1782 125.408 29.0736C125.304 28.9516 125.251 28.8034 125.251 28.629V11.5505C125.251 11.3587 125.304 11.2105 125.408 11.1059C125.513 10.9839 125.661 10.9229 125.853 10.9229H132.235C134.205 10.9229 135.765 11.3849 136.916 12.309C138.067 13.2331 138.642 14.6018 138.642 16.4152C138.642 17.7577 138.302 18.8562 137.622 19.7105C136.96 20.5475 136.053 21.1316 134.902 21.4629L138.93 28.4198C138.982 28.5244 139.008 28.6203 139.008 28.7075C139.008 28.847 138.947 28.969 138.825 29.0736C138.721 29.1782 138.599 29.2305 138.459 29.2305H137.204C136.907 29.2305 136.689 29.1521 136.55 28.9952C136.41 28.8382 136.288 28.6813 136.184 28.5244L132.391 21.8813H127.815V28.629C127.815 28.8034 127.754 28.9516 127.631 29.0736C127.527 29.1782 127.379 29.2305 127.187 29.2305H125.853ZM127.815 19.6582H132.13C133.438 19.6582 134.414 19.388 135.059 18.8475C135.704 18.2895 136.027 17.47 136.027 16.389C136.027 15.3254 135.704 14.5146 135.059 13.9567C134.431 13.3987 133.455 13.1198 132.13 13.1198H127.815V19.6582Z" fill="#262878"/><path d="M103.484 29.2305C103.293 29.2305 103.144 29.1782 103.04 29.0736C102.935 28.9516 102.883 28.8034 102.883 28.629V11.5505C102.883 11.3587 102.935 11.2105 103.04 11.1059C103.144 10.9839 103.293 10.9229 103.484 10.9229H109.866C111.836 10.9229 113.397 11.3849 114.547 12.309C115.698 13.2331 116.274 14.6018 116.274 16.4152C116.274 17.7577 115.934 18.8562 115.254 19.7105C114.591 20.5475 113.684 21.1316 112.534 21.4629L116.561 28.4198C116.614 28.5244 116.64 28.6203 116.64 28.7075C116.64 28.847 116.579 28.969 116.457 29.0736C116.352 29.1782 116.23 29.2305 116.091 29.2305H114.835C114.539 29.2305 114.321 29.1521 114.181 28.9952C114.042 28.8382 113.92 28.6813 113.815 28.5244L110.023 21.8813H105.446V28.629C105.446 28.8034 105.385 28.9516 105.263 29.0736C105.158 29.1782 105.01 29.2305 104.818 29.2305H103.484ZM105.446 19.6582H109.761C111.069 19.6582 112.045 19.388 112.691 18.8475C113.336 18.2895 113.658 17.47 113.658 16.389C113.658 15.3254 113.336 14.5146 112.691 13.9567C112.063 13.3987 111.086 13.1198 109.761 13.1198H105.446V19.6582Z" fill="#262878"/><path d="M78.9017 29.2305C78.7623 29.2305 78.6402 29.1782 78.5356 29.0736C78.431 28.969 78.3787 28.847 78.3787 28.7075C78.3787 28.6203 78.3874 28.5244 78.4048 28.4198L84.891 11.4982C84.9607 11.3239 85.0566 11.1844 85.1787 11.0798C85.3007 10.9752 85.4838 10.9229 85.7279 10.9229H87.5064C87.733 10.9229 87.9074 10.9752 88.0294 11.0798C88.1689 11.1844 88.2735 11.3239 88.3433 11.4982L94.8033 28.4198C94.8382 28.5244 94.8556 28.6203 94.8556 28.7075C94.8556 28.847 94.8033 28.969 94.6987 29.0736C94.594 29.1782 94.472 29.2305 94.3325 29.2305H92.9987C92.7894 29.2305 92.6325 29.1782 92.5279 29.0736C92.4407 28.969 92.3797 28.8731 92.3448 28.7859L90.9064 25.0721H82.3279L80.8894 28.7859C80.872 28.8731 80.811 28.969 80.7064 29.0736C80.6017 29.1782 80.4448 29.2305 80.2356 29.2305H78.9017ZM83.0864 22.8229H90.1479L86.6171 13.5382L83.0864 22.8229Z" fill="#262878"/><path d="M64.2508 29.4921C62.6467 29.4921 61.3128 29.1957 60.2492 28.6029C59.2031 28.0101 58.4098 27.1819 57.8692 26.1183C57.3287 25.0547 57.0323 23.8168 56.98 22.4045C56.9626 21.6896 56.9539 20.9224 56.9539 20.1029C56.9539 19.2834 56.9626 18.4988 56.98 17.7491C57.0323 16.3368 57.3287 15.0988 57.8692 14.0352C58.4098 12.9716 59.2031 12.1434 60.2492 11.5506C61.3128 10.9578 62.6467 10.6614 64.2508 10.6614C65.4539 10.6614 66.5087 10.827 67.4154 11.1583C68.3221 11.4896 69.0718 11.9342 69.6646 12.4921C70.2749 13.0501 70.7369 13.6778 71.0508 14.3752C71.3646 15.0552 71.539 15.7614 71.5739 16.4937C71.5913 16.6506 71.539 16.7814 71.4169 16.886C71.3123 16.9906 71.1815 17.0429 71.0246 17.0429H69.5862C69.4292 17.0429 69.2898 16.9993 69.1677 16.9121C69.0631 16.825 68.9846 16.668 68.9323 16.4414C68.6359 15.0814 68.078 14.1486 67.2585 13.6429C66.4564 13.1373 65.4451 12.8845 64.2246 12.8845C62.8298 12.8845 61.7226 13.2855 60.9031 14.0875C60.0836 14.8721 59.639 16.1362 59.5692 17.8798C59.5169 19.3096 59.5169 20.7742 59.5692 22.2737C59.639 24.0173 60.0836 25.2901 60.9031 26.0921C61.7226 26.8768 62.8298 27.2691 64.2246 27.2691C65.4451 27.2691 66.4564 27.0163 67.2585 26.5106C68.078 26.005 68.6359 25.0721 68.9323 23.7121C68.9846 23.4855 69.0631 23.3286 69.1677 23.2414C69.2898 23.1542 69.4292 23.1106 69.5862 23.1106H71.0246C71.1815 23.1106 71.3123 23.1629 71.4169 23.2675C71.539 23.3721 71.5913 23.5029 71.5739 23.6598C71.539 24.3921 71.3646 25.107 71.0508 25.8045C70.7369 26.4845 70.2749 27.1034 69.6646 27.6614C69.0718 28.2193 68.3221 28.6639 67.4154 28.9952C66.5087 29.3265 65.4539 29.4921 64.2508 29.4921Z" fill="#262878"/><defs><linearGradient id="mg0" x1="31.6085" y1="20" x2="8.50997" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#4449F2"/><stop offset="1" stop-color="#2AD4FA"/></linearGradient><linearGradient id="mg1" x1="27.6925" y1="19.9999" x2="10.7694" y2="19.9999" gradientUnits="userSpaceOnUse"><stop stop-color="#80F3F7"/><stop offset="1" stop-color="#EC60FB"/></linearGradient></defs></svg><p>Add the annotated file, then the new one. We pick the right workflow for you.</p></div>
+        <div class="progress-card">
+          <h3 id="progress-title">Matching callouts to the new pages…</h3>
+          <p id="progress-detail">Large PDFs can take a few minutes.</p>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="progress-bar"></div>
+          </div>
+          <div class="progress-meta"><span id="progress-pct">0%</span><span id="progress-elapsed"></span></div>
+          <p class="progress-hint" id="progress-hint"></p>
+          <button type="button" class="cancel-btn" id="cancel-btn" onclick="cancelJob()">Cancel</button>
+        </div>
         <div class="drop-grid">
           <div class="upload-zone" id="zone-annotated">
             <input type="file" id="input-annotated" accept=".pdf,.docx" />
@@ -761,7 +754,7 @@
     formData.append(cfg.fb, inputNew.files[0]);
     Object.entries(cfg.extra || {}).forEach(([k, v]) => formData.append(k, v));
 
-    document.getElementById('progress-screen').style.display = 'flex';
+    setBusy(true); currentJobId = null;
     const titleEl = document.getElementById('progress-title'), detailEl = document.getElementById('progress-detail');
     const barEl = document.getElementById('progress-bar'), pctEl = document.getElementById('progress-pct');
     const elapsedEl = document.getElementById('progress-elapsed'), hintEl = document.getElementById('progress-hint');
@@ -773,6 +766,7 @@
       elapsedEl.textContent = 'Elapsed ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
       hintEl.textContent = s > 45 ? 'Big files can take several minutes. Keep this tab open.' : '';
     }, 1000);
+    cancelCtl = { timer, xhr: null, cancelled: false };
     titleEl.textContent = 'Uploading your PDFs…';
     detailEl.textContent = 'Sending the files to the server';
     setBar(0);
@@ -781,6 +775,7 @@
     try {
       const { status, data } = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        cancelCtl.xhr = xhr;
         xhr.open('POST', cfg.endpoint);
         xhr.upload.onprogress = ev => {
           if (!ev.lengthComputable) return;
@@ -803,7 +798,9 @@
       currentJobId = data.job_id;
       pollInterval = setInterval(async () => {
         try {
-          const r = await fetch('/status/' + currentJobId);
+          const jid = currentJobId; if (!jid) return;
+          const r = await fetch('/status/' + jid);
+          if (!currentJobId) return;
           if (r.status === 404) {
             clearInterval(pollInterval); clearInterval(timer);
             showUploadError('The server restarted while working on your files (this can happen with very large PDFs when it runs out of memory), so the job was lost. Please try again, or use smaller PDFs.');
@@ -830,12 +827,22 @@
       }, 1500);
     } catch(e) {
       clearInterval(timer);
+      if (cancelCtl && cancelCtl.cancelled) return;
       showUploadError('Couldn’t finish the upload. Your connection may have dropped, or the server may have rejected or restarted on a very large file. Check your connection and try again; if it repeats, try smaller PDFs.');
     }
   }
 
+  let cancelCtl = null;
+  function setBusy(on) { document.getElementById('drop-area').classList.toggle('busy', on); }
+  function cancelJob() {
+    const c = cancelCtl; if (!c) { setBusy(false); return; }
+    c.cancelled = true; clearInterval(c.timer); clearInterval(pollInterval);
+    if (c.xhr) { try { c.xhr.abort(); } catch (e) {} }
+    if (currentJobId) fetch('/cancel/' + currentJobId, { method: 'POST' }).catch(() => {});
+    currentJobId = null; cancelCtl = null; setBusy(false);
+  }
   function showUploadError(msg) {
-    document.getElementById('progress-screen').style.display = 'none';
+    setBusy(false);
     showError(msg);
   }
 
@@ -845,8 +852,14 @@
   // ── Column labels: hide the original, zoom the updated pages ───────────────
   const COL_LABELS_HTML = `
     <div class="col-labels">
-      <div class="col-label"><span id="lbl-left">Original</span></div>
-      <div class="col-label"><span>Updated</span></div>
+      <div class="col-label"><button type="button" class="cl-btn cl-left" data-act="toggle-orig" id="orig-btn" disabled>Hide original</button><span id="lbl-left">Original</span></div>
+      <div class="col-label"><button type="button" class="cl-btn cl-left show-orig" data-act="toggle-orig" id="show-orig-btn" disabled>Show original</button><span>Updated</span><div class="cl-right" role="group" aria-label="Zoom the updated pages"><div class="zoom-group">
+      <button type="button" class="cl-btn icon" data-act="zoom-out" aria-label="Zoom out" title="Zoom out" disabled>
+        <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
+      <button type="button" class="cl-btn zoom-val" data-act="zoom-reset" aria-label="Reset zoom" title="Reset zoom" id="zoom-val" disabled>100%</button>
+      <button type="button" class="cl-btn icon" data-act="zoom-in" aria-label="Zoom in" title="Zoom in" disabled>
+        <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M6 1.5v9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
+    </div></div></div>
     </div>`;
   const ZOOMS = [1, 1.5, 2, 3, 4];
   let zoomIdx = 0, activeEntry = null;
@@ -880,8 +893,7 @@
     const panel = document.getElementById('pages-panel');
     const mid = (panel.scrollTop + panel.clientHeight / 2) / Math.max(1, panel.scrollHeight);
     panel.classList.toggle('orig-collapsed', on);
-    document.getElementById('orig-btn').textContent = on ? 'Show original' : 'Hide original';
-    try { localStorage.setItem('carryover.origCollapsed', on ? '1' : '0'); } catch (e) {}
+        try { localStorage.setItem('carryover.origCollapsed', on ? '1' : '0'); } catch (e) {}
     requestAnimationFrame(() => {
       if (activeEntry) scrollToAnnotation(activeEntry);
       else panel.scrollTop = mid * panel.scrollHeight - panel.clientHeight / 2;
@@ -931,11 +943,11 @@
     else if (act === 'redo') histRedo();
   });
   window.addEventListener('resize', () => { clearTimeout(window._rzT); window._rzT = setTimeout(refreshImages, 250); });
-  function toolbarEnable(on) { document.querySelectorAll('#toolbar .tb-group button').forEach(b => b.disabled = !on); if (on) document.querySelector('[data-act="zoom-out"]').disabled = true; histUI(); }
-  try { if (localStorage.getItem('carryover.origCollapsed') === '1') { document.getElementById('pages-panel').classList.add('orig-collapsed'); document.getElementById('orig-btn').textContent = 'Show original'; } } catch (e) {}
+  function toolbarEnable(on) { document.querySelectorAll('#toolbar .tb-group button, .col-labels .cl-btn').forEach(b => b.disabled = !on); if (on) document.querySelector('[data-act="zoom-out"]').disabled = true; histUI(); }
+  try { if (localStorage.getItem('carryover.origCollapsed') === '1') { document.getElementById('pages-panel').classList.add('orig-collapsed'); } } catch (e) {}
 
   function showResults(results) {
-    document.getElementById('progress-screen').style.display = 'none';
+    setBusy(false); cancelCtl = null;
     deletedIndices = new Set();
     reviewedIndices = new Set();
     dotOverrides.clear();
