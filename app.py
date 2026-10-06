@@ -431,7 +431,10 @@ def confirm(job_id):
     sides = {}
     for k, v in (data.get("sides") or {}).items():
         try:
-            sides[int(k)] = int(v) % 4          # quarter turns: 0 right, 1 below, 2 left, 3 above
+            if isinstance(v, (list, tuple)) and len(v) == 2:
+                sides[int(k)] = (float(v[0]), float(v[1]))     # ring dragged to a free spot: offset in ring radii
+            else:
+                sides[int(k)] = int(v) % 4      # quarter turns: 0 right, 1 below, 2 left, 3 above
         except (ValueError, TypeError):
             continue
     overrides = {}

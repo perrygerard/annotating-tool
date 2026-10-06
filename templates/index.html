@@ -139,6 +139,7 @@
     .ann-mark .pin-body { fill: var(--pin-fill); stroke: var(--pin-ink); stroke-width: 2px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
     .ann-mark .pin-stem { stroke: var(--pin-ink); stroke-width: 2px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
     .ann-mark .pin-dot { fill: var(--pin-ink); }
+    .ann-mark .pin-hit { fill: transparent; stroke: none; cursor: crosshair; }
     .ann-mark { filter: drop-shadow(0 1px 1.5px rgb(15 23 42 / .35)); }
     .ann-mark text { fill: var(--pin-ink); font-weight: 700; font-family: var(--body); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
     .ann-mark:hover .pin-body { filter: brightness(0.97); }
@@ -660,7 +661,8 @@
   let deletedIndices = new Set(); // annotation .index values the user has removed
   let reviewedIndices = new Set(); // annotation .index values marked "Looks Good"
   const dotOverrides = new Map();  // annotation .index -> [x_frac, y_frac] manual pin-point positions
-  const sideOverrides = new Map(); // annotation .index -> quarter turns 0..3 (0 ring right, 1 below, 2 left, 3 above), only when it differs from the default
+  const PIN_DIRS_G = [[1, 0], [0, 1], [-1, 0], [0, -1]], PIN_L_G = 2.0;   // same as inside buildPin
+  const sideOverrides = new Map(); // annotation .index -> quarter turn 0..3 (0 ring right, 1 below, 2 left, 3 above) or a dragged ring offset [kx, ky] in ring radii; only when it differs from the default
   const boxEdits = new Map();      // box .index -> [x, y, w, h] fractions of the output page (boxes the user moved / resized)
   const contentEdits = new Map();  // annotation .index -> edited reference text
   let drawMode = false, pinMode = false, newBoxSeq = 0;
@@ -1037,43 +1039,45 @@
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.setAttribute('class', 'ann-mark ' + (ann.status || 'moved'));
       const mk = (tag, cls) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); if (cls) e.setAttribute('class', cls); return e; };
-      const stem = mk('line', 'pin-stem'), body = mk('circle', 'pin-body'), dot = mk('circle', 'pin-dot');
+      const stem = mk('line', 'pin-stem'), body = mk('circle', 'pin-body'), dot = mk('circle', 'pin-dot'), hit = mk('circle', 'pin-hit');
       const t = mk('text');
       let lbl = String(ann.number) + (ann.sub_label || '');
       const fs = () => r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8);
       t.setAttribute('font-size', fs());
       t.textContent = lbl;
       const tt = mk('title');
-      const title = () => `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag to move, double-click or R to turn`;
+      const title = () => `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag the number to place it, drag the dot to aim, double-click or R to turn`;
       tt.textContent = title();
       g._setLabel = () => {
         lbl = String(ann.number) + (ann.sub_label || '');
         t.textContent = lbl; t.setAttribute('font-size', fs()); tt.textContent = title();
       };
-      [tt, stem, dot, body, t].forEach(e => g.appendChild(e));
+      [tt, stem, dot, body, t, hit].forEach(e => g.appendChild(e));
       svg.appendChild(g);
 
       const maxX = vbW * contentFrac;
       g._dir = ((ann.pin_dir | 0) % 4 + 4) % 4; g._defDir = g._dir;    // quarter turns: 0 ring to the right, 1 below, 2 left, 3 above
+      g._off = [PIN_DIRS[g._dir][0] * PIN_L, PIN_DIRS[g._dir][1] * PIN_L];   // ring centre from the point, in ring radii (zoom-proof)
       // Place by the POINT; the ring is clamped to stay on the page
       g._setPos = (px, py) => {
-        const v = PIN_DIRS[g._dir];
-        const cx = Math.max(r, Math.min(px + v[0] * r * PIN_L, maxX - r));
-        const cy = Math.max(r, Math.min(py + v[1] * r * PIN_L, vbH - r));
+        const cx = Math.max(r, Math.min(px + g._off[0] * r, maxX - r));
+        const cy = Math.max(r, Math.min(py + g._off[1] * r, vbH - r));
         stem.setAttribute('x1', px); stem.setAttribute('y1', py); stem.setAttribute('x2', cx); stem.setAttribute('y2', cy);
         dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.setAttribute('r', r * TIP_R);
         body.setAttribute('cx', cx); body.setAttribute('cy', cy); body.setAttribute('r', r);
+        hit.setAttribute('cx', px); hit.setAttribute('cy', py); hit.setAttribute('r', r * 0.6);
         t.setAttribute('x', cx); t.setAttribute('y', cy);
         g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
         g._px = px; g._py = py;
       };
-      g._setDir = d => { g._dir = ((d % 4) + 4) % 4; g._setPos(g._px, g._py); };
+      g._setDir = d => { g._dir = ((d % 4) + 4) % 4; g._off = [PIN_DIRS[g._dir][0] * PIN_L, PIN_DIRS[g._dir][1] * PIN_L]; g._setPos(g._px, g._py); };
+      g._setOff = (kx, ky) => { g._off = [kx, ky]; g._setPos(g._px, g._py); };
       g._setZoom = z => { r = r0 / z; t.setAttribute('font-size', fs()); g._setPos(g._px, g._py); };
       g._orig = { px: ann.dot_x * vbW, py: ann.dot_y * vbH };
       g._setPos(g._orig.px, g._orig.py);
 
       // ── Drag the pin; its point is what gets saved ─────────────────
-      let dragging = false, moved = false, sx = 0, sy = 0, p0 = null, start = null;
+      let dragging = false, moved = false, sx = 0, sy = 0, p0 = null, start = null, mode = 'point', offStart = null;
       const toSvg = ev => {
         const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
         return pt.matrixTransform(svg.getScreenCTM().inverse());
@@ -1081,7 +1085,9 @@
       g.addEventListener('pointerdown', ev => {
         if (ev.button !== undefined && ev.button !== 0) return;
         dragging = true; moved = false; sx = ev.clientX; sy = ev.clientY;
-        p0 = toSvg(ev); start = { x: g._px, y: g._py };
+        p0 = toSvg(ev); start = { x: g._px, y: g._py }; offStart = g._off.slice();
+        // the dot aims the pin; the number places it round the dot; Shift on the number moves the whole pin
+        mode = ev.target === hit || ev.target === dot ? 'point' : (ev.shiftKey ? 'whole' : 'ring');
         try { g.setPointerCapture(ev.pointerId); } catch (e) {}
         ev.preventDefault();
       });
@@ -1090,6 +1096,12 @@
         if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
         moved = true; g.classList.add('dragging');
         const p = toSvg(ev);
+        if (mode === 'ring') {
+          let kx = offStart[0] + (p.x - p0.x) / r, ky = offStart[1] + (p.y - p0.y) / r;
+          const len = Math.hypot(kx, ky) || 1, L = Math.max(1.8, Math.min(len, 6));       // stays attached: 1.8 to 6 ring radii from the dot
+          g._setOff(kx / len * L, ky / len * L);
+          return;
+        }
         let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
         nx = Math.max(0, Math.min(nx, maxX)); ny = Math.max(0, Math.min(ny, vbH));      // the point stays on the page
         g._setPos(nx, ny);
@@ -1098,7 +1110,8 @@
         if (!dragging) return;
         dragging = false; g.classList.remove('dragging');
         try { g.releasePointerCapture(ev.pointerId); } catch (e) {}
-        if (moved) onMarkerMoved(ann.index, g._px / vbW, g._py / vbH);
+        if (moved && mode === 'ring') onRingMoved(ann.index, g._off, offStart);
+        else if (moved) onMarkerMoved(ann.index, g._px / vbW, g._py / vbH);
       };
       g.addEventListener('pointerup', end);
       g.addEventListener('pointercancel', end);
@@ -1808,13 +1821,34 @@
     updateConfirmButton();
   }
 
-  // Turn a pin a quarter at a time (step +1 clockwise, -1 back): the ring moves round the point
+  // Record where the ring sits: a plain quarter turn when it matches one, else the dragged offset
+  function _storeRing(entry, g) {
+    const k = entry.ann.index, o = g._off;
+    for (let d = 0; d < 4; d++) {
+      if (Math.abs(o[0] - PIN_DIRS_G[d][0] * PIN_L_G) < 0.05 && Math.abs(o[1] - PIN_DIRS_G[d][1] * PIN_L_G) < 0.05) {
+        g._dir = d;
+        if (d === g._defDir) sideOverrides.delete(k); else sideOverrides.set(k, d);
+        return;
+      }
+    }
+    sideOverrides.set(k, [+o[0].toFixed(3), +o[1].toFixed(3)]);
+  }
+  function onRingMoved(annIndex, off, offBefore) {
+    const idx = registryIdxByAnn(annIndex), entry = (window._annRegistry || [])[idx];
+    if (!entry || !entry.newRectEl) return;
+    _storeRing(entry, entry.newRectEl);
+    if (!reviewedIndices.has(annIndex)) { reviewedIndices.add(annIndex); entry.autoReviewed = true; }
+    renumber(); refreshGroup(idx); updateConfirmButton();
+  }
+
+  // Turn a pin a quarter at a time (step +1 clockwise, -1 back): the ring swings round the point, keeping its distance
   function onMarkerFlipped(idx, step = 1) {
     const entry = (window._annRegistry || [])[idx];
     if (!entry || !entry.newRectEl || !entry.newRectEl._setDir) return;
     const g = entry.newRectEl, k = entry.ann.index;
-    g._setDir(g._dir + step);
-    if (g._dir === g._defDir) sideOverrides.delete(k); else sideOverrides.set(k, g._dir);
+    const [ox, oy] = g._off;
+    g._setOff(step >= 0 ? -oy : oy, step >= 0 ? ox : -ox);       // 90 degrees about the point
+    _storeRing(entry, g);
     if (sideOverrides.has(k) && !reviewedIndices.has(k)) { reviewedIndices.add(k); entry.autoReviewed = true; }
     refreshGroup(idx);
     updateConfirmButton();
@@ -1952,14 +1986,14 @@
       else if (deletedIndices.has(k)) action = 'removed';
       else {
         if (ov && ox != null) { dist = Math.hypot((ov[0] - ox) * W, (ov[1] - oy) * H); if (dist > 2) action = 'moved'; }
-        if (action === 'untouched' && sideOverrides.has(k)) action = 'turned';
+        if (action === 'untouched' && sideOverrides.has(k)) action = Array.isArray(sideOverrides.get(k)) ? 'ring_moved' : 'turned';
         if (action === 'untouched' && contentEdits.has(k)) action = 'text_edited';
       }
       pins.push({ index: k, number: a.number == null ? null : a.number, page: pg.new_page_num || pg.page_num || null,
         sub: a.sub_label || '', text: (a.content || '').slice(0, 60),
         auto: a.isNew ? null : { status: a.status, method: a.method, confidence: a.confidence, x: round(ox), y: round(oy), snapped_pt: a.snapped || 0 },
         action, moved_pt: Math.round(dist), final: ov ? [round(ov[0]), round(ov[1])] : null,
-        turned: sideOverrides.has(k), text_edited: contentEdits.has(k), adjusted_flag: reviewedIndices.has(k) });
+        turned: sideOverrides.has(k) && !Array.isArray(sideOverrides.get(k)), ring: Array.isArray(sideOverrides.get(k)) ? sideOverrides.get(k) : null, text_edited: contentEdits.has(k), adjusted_flag: reviewedIndices.has(k) });
     });
     const by = {}; pins.forEach(p => { if (!p.sub) by[p.action] = (by[p.action] || 0) + 1; });
     return { schema: 1, exported_at: new Date().toISOString(), tool: 'Carryover',
@@ -2096,7 +2130,7 @@
     if (k === 'y' || ev.shiftKey) histRedo(); else histUndo();
   });
 
-  const _pinState = e => { const k = e.ann.index, g = e.newRectEl; return { dir: g && g._dir, dot: dotOverrides.has(k) ? dotOverrides.get(k).slice() : null,
+  const _pinState = e => { const k = e.ann.index, g = e.newRectEl; return { dir: g && g._dir, off: g && g._off ? g._off.slice() : null, dot: dotOverrides.has(k) ? dotOverrides.get(k).slice() : null,
     side: sideOverrides.has(k) ? sideOverrides.get(k) : null, rev: reviewedIndices.has(k), auto: !!e.autoReviewed }; };
   function _pinRestore(idx, s) {
     const e = (window._annRegistry || [])[idx]; if (!e) return;
@@ -2105,7 +2139,7 @@
     if (s.side !== null) sideOverrides.set(k, s.side); else sideOverrides.delete(k);
     if (s.rev) reviewedIndices.add(k); else reviewedIndices.delete(k);
     e.autoReviewed = s.auto;
-    if (g && g._setPos) { g._setDir(s.dir); if (s.dot) g._setPos(s.dot[0] * e.pg.width, s.dot[1] * e.pg.height); else g._setPos(g._orig.px, g._orig.py); }
+    if (g && g._setPos) { g._setDir(s.dir); if (s.off) g._off = s.off.slice(); if (s.dot) g._setPos(s.dot[0] * e.pg.width, s.dot[1] * e.pg.height); else g._setPos(g._orig.px, g._orig.py); }
     renumber(); refreshGroup(idx); updateConfirmButton();
   }
   const _toggleDelete = toggleDelete;
@@ -2123,6 +2157,16 @@
     const after = _pinState(e);
     hrec(() => _pinRestore(idx, before), () => _pinRestore(idx, after));
   };
+  const _onRingMoved = onRingMoved;
+  onRingMoved = function (annIndex, off, offBefore) {
+    const idx = registryIdxByAnn(annIndex), e = (window._annRegistry || [])[idx];
+    const before = e ? _pinState(e) : null;
+    if (before && offBefore) before.off = offBefore.slice();     // the ring was already dragged when this fires
+    _onRingMoved(annIndex, off, offBefore);
+    if (!e) return;
+    const after = _pinState(e);
+    hrec(() => _pinRestore(idx, before), () => _pinRestore(idx, after));
+  };
   const _onMarkerFlipped = onMarkerFlipped;
   onMarkerFlipped = function (idx, step) {
     const e = (window._annRegistry || [])[idx];
@@ -2130,7 +2174,7 @@
     _onMarkerFlipped(idx, step);
     if (!e || !before) return;
     const after = _pinState(e);
-    if (after.dir === before.dir) return;
+    if (after.dir === before.dir && JSON.stringify(after.off) === JSON.stringify(before.off)) return;
     hrec(() => _pinRestore(idx, before), () => _pinRestore(idx, after));
   };
   const _resetPosition = resetPosition;

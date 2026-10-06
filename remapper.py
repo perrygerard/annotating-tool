@@ -1578,12 +1578,15 @@ def _ink_for(page, pw, ph):
         return None
 
 
+SNAP_TO_CONTENT = False   # off: in the flu test it moved ~9 pins you had placed well, and helped ~1-2 (see tracking, runs 20-21)
+
+
 def _snap_to_content(infos, ink, S):
     """An arrow tip can sit in the gap beside a card, under a headline or next to a picture and still read
     fine as a line with a head. A pin has no line, so a point on empty space looks random. Move such a
     point to the nearest content, preferring what the arrow was heading toward. Points already on content
     stay exactly where they are; nothing moves further than ~100pt (scaled with the page)."""
-    if ink is None:
+    if ink is None or not SNAP_TO_CONTENT:
         return
     reach, tol = 100.0 * S, 3.0 * S
     for info in infos:
@@ -1637,12 +1640,22 @@ def _dot_position(info, pw, ph, dot_r, S, d=None):
     if d is None:
         d = _pin_dir(info)
     x, y = _anchor_point(info)
-    v = PIN_DIRS[d % 4]
+    v = _dir_vec(d)
     return x + v[0] * 2 * S, y + v[1] * 2 * S
 
 
+def _dir_vec(d):
+    """Unit direction from the point to the ring: a quarter turn (0..3) or a free offset (kx, ky) in ring radii."""
+    if isinstance(d, (tuple, list)):
+        n = math.hypot(d[0], d[1]) or 1.0
+        return (d[0] / n, d[1] / n)
+    return PIN_DIRS[d % 4]
+
+
 def _pin_body_center(px, py, r, d=0):
-    """Body centre for a pin whose point is (px, py), turned `d` quarter turns."""
+    """Body centre for a pin whose point is (px, py): turned `d` quarter turns, or a dragged offset (kx, ky) in ring radii."""
+    if isinstance(d, (tuple, list)):
+        return px + d[0] * r, py + d[1] * r
     v = PIN_DIRS[d % 4]
     return px + v[0] * r * PIN_L, py + v[1] * r * PIN_L
 
