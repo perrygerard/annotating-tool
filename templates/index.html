@@ -335,6 +335,8 @@
     .conf-lbl { font-size: .78rem; font-weight: 600; color: #64748b; }
     .conf-bar { height: 6px; border-radius: 99px; background: #e2e8f0; margin: 10px 0 8px; overflow: hidden; }
     .conf-bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: #4449F2; transition: width .3s; }
+    .conf-mode { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: .78rem; line-height: 1.45; color: #64748b; }
+    .conf-link { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: #4449F2; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
     .conf-sub { font-size: .78rem; line-height: 1.4; color: #64748b; }
     html[data-theme="tailwind"] .ann-item { border: none; border-radius: 5px; box-shadow: 0 0 0 1px rgb(15 23 42 / .08), 0 1px 2px rgb(15 23 42 / .04); }
     html[data-theme="tailwind"] .ann-item:hover { box-shadow: 0 0 0 1px rgb(15 23 42 / .16), 0 1px 2px rgb(15 23 42 / .06); }
@@ -597,9 +599,6 @@
         <div class="drop-foot">
           <span class="drop-note">Large PDFs are fine, up to 400 MB combined.</span>
           <div class="drop-act">
-          <label class="mode-opt" id="derive-opt" style="display:none;" title="Turn this on when the new file is a derivative asset (shorter, rearranged or a new format), not an update of the annotated one. Each claim is found by its wording.">
-            <input type="checkbox" id="derive-check"> <span>Derivative asset</span>
-          </label>
           <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Carry annotations over</button>
           </div>
         </div>
@@ -618,6 +617,7 @@
         <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">placement confidence</span></div>
         <div class="conf-bar"><i id="conf-bar-fill"></i></div>
         <div class="conf-sub" id="conf-sub"></div>
+        <div class="conf-mode" id="conf-mode" hidden><span id="conf-mode-text"></span> <button type="button" class="conf-link" id="conf-rerun"></button></div>
       </div>
       <div class="detail-header filter-title" id="filter-title">Filter</div>
       <div class="summary-tiles" role="group" aria-label="Filter references">
@@ -670,29 +670,25 @@
   let mode = 'update';       // 'update' = remap old annotations, 'add' = place references from a Word list
   const MODES = {
     update: { btn: 'Carry annotations over', intro: 'Each callout is matched to the content it pointed at and re-pinned on the new pages, with a References sidebar.',
-              title: 'Matching callouts to the new pages…', detail: 'Large PDFs can take up to a minute.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf' },
-    derive: { btn: 'Find claims in the derivative asset', intro: 'Each callout’s claim is searched for by wording in the derivative asset. Found claims get a pin; wording that changed is flagged to check; claims that were cut are listed as not in this asset.',
-              title: 'Finding each claim in the derivative asset…', detail: 'Pages without selectable text are read with OCR, which takes longer.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf', extra: { mode: 'derivative' } },
+              title: 'Matching callouts to the new file…', detail: 'Large PDFs can take up to a minute.', endpoint: '/remap', fa: 'annotated_pdf', fb: 'new_pdf' },
     add:    { btn: 'Place references', intro: 'Word doc detected. Each reference is placed from its superscript number or the copy it supports, with a References sidebar. Anything it can’t place is left for you to drag into position.',
               title: 'Placing references on the pages…', detail: 'Pages without selectable text are read with OCR, which takes longer.', endpoint: '/place', fa: 'reference_doc', fb: 'layout_pdf' },
   };
   const extOf = f => (f && f.name.toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || '';
   function applyMode() {
     const f = inputAnnotated.files[0];
-    const deriveOn = document.getElementById('derive-check').checked;
-    mode = extOf(f) === 'docx' ? 'add' : (deriveOn ? 'derive' : 'update');
-    document.getElementById('derive-opt').style.display = (f && extOf(f) !== 'docx') ? '' : 'none';
+    mode = extOf(f) === 'docx' ? 'add' : 'update';
     const c = MODES[mode];
     submitBtn.textContent = c.btn;
     document.getElementById('intro-text').textContent = f ? c.intro : 'We pick the right workflow from the file you drop';
-    document.getElementById('label-annotated').textContent = f ? (mode === 'add' ? 'Reference list (Word)' : mode === 'derive' ? 'Annotated source' : 'Annotated PDF') : 'Annotated source';
+    document.getElementById('label-annotated').textContent = f ? (mode === 'add' ? 'Reference list (Word)' : 'Annotated PDF') : 'Annotated source';
     document.getElementById('progress-title').textContent = c.title;
     document.getElementById('progress-detail').textContent = c.detail;
   }
   function clearZones() {
     ['zone-annotated','zone-new'].forEach(id => document.getElementById(id).classList.remove('has-file'));
     ['name-annotated','name-new'].forEach(id => document.getElementById(id).textContent = '');
-    inputAnnotated.value = ''; inputNew.value = ''; submitBtn.disabled = true; document.getElementById('derive-check').checked = false;
+    inputAnnotated.value = ''; inputNew.value = ''; submitBtn.disabled = true;
     applyMode();
   }
 
@@ -728,7 +724,6 @@
       }
     });
   }
-  document.getElementById('derive-check').addEventListener('change', applyMode);
   setupZone(inputAnnotated, 'zone-annotated', 'name-annotated');
   setupZone(inputNew, 'zone-new', 'name-new');
   function checkReady() { submitBtn.disabled = !(inputAnnotated.files[0] && inputNew.files[0]); }
@@ -746,13 +741,13 @@
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────────
-  async function submitJob() {
+  async function submitJob(force) {
     hideError();
     const formData = new FormData();
     const cfg = MODES[mode];
     formData.append(cfg.fa, inputAnnotated.files[0]);
     formData.append(cfg.fb, inputNew.files[0]);
-    Object.entries(cfg.extra || {}).forEach(([k, v]) => formData.append(k, v));
+    if (mode === 'update') formData.append('mode', force || 'auto');
 
     setBusy(true); currentJobId = null;
     const titleEl = document.getElementById('progress-title'), detailEl = document.getElementById('progress-detail');
@@ -946,6 +941,17 @@
   function toolbarEnable(on) { document.querySelectorAll('#toolbar .tb-group button, .col-labels .cl-btn').forEach(b => b.disabled = !on); if (on) document.querySelector('[data-act="zoom-out"]').disabled = true; histUI(); }
   try { if (localStorage.getItem('carryover.origCollapsed') === '1') { document.getElementById('pages-panel').classList.add('orig-collapsed'); } } catch (e) {}
 
+  let lastMode = null;
+  function showModeNote(results) {
+    const box = document.getElementById('conf-mode'); lastMode = results.mode_used || null;
+    if (!lastMode || mode === 'add') { box.hidden = true; return; }
+    const deriv = lastMode === 'derivative';
+    document.getElementById('conf-mode-text').textContent = (results.mode_auto ? 'Detected ' : 'Matched as ') + (deriv ? 'a derivative asset' : 'an updated version') + '. ' + (results.mode_reason || '');
+    const b = document.getElementById('conf-rerun');
+    b.textContent = deriv ? 'Re-run as updated version' : 'Re-run as derivative asset';
+    b.onclick = () => { resetForm(true); submitJob(deriv ? 'update' : 'derivative'); };
+    box.hidden = false;
+  }
   function showResults(results) {
     setBusy(false); cancelCtl = null;
     deletedIndices = new Set();
@@ -976,7 +982,7 @@
     // Render page thumbnails with overlays
     const panel = document.getElementById('pages-panel');
     // Clear everything after the sticky column labels
-    while (panel.children.length > 2) panel.removeChild(panel.lastChild);
+    [...panel.children].forEach(el => { if (!el.classList.contains('col-labels') && el.id !== 'ghost-pages' && el.id !== 'drop-area') el.remove(); });
     const zv = document.getElementById('zoom-val'); if (zv) zv.textContent = '100%';
     toolbarEnable(true);
     document.getElementById('lbl-left').textContent = addMode ? 'Source' : 'Original';
@@ -1317,6 +1323,7 @@
       listHeader.style.display = '';
       numbered.forEach(({ entry, idx }) => listEl.appendChild(buildAnnItem(entry, idx)));
     }
+    showModeNote(results);
     activeFilter = 'all';
     // Claims that were not found in the new piece start out removed (kept in the list, left out of the export)
     annRegistry.forEach((entry, idx) => {
@@ -2117,10 +2124,10 @@
     return i;
   };
 
-  function resetForm() {
+  function resetForm(keepFiles) {
     document.getElementById('header-actions').hidden = true;
     const _pp = document.getElementById('pages-panel');
-    while (_pp.children.length > 2) _pp.removeChild(_pp.lastChild);
+    [..._pp.children].forEach(el => { if (!el.classList.contains('col-labels') && el.id !== 'ghost-pages' && el.id !== 'drop-area') el.remove(); });
     document.getElementById('drop-area').classList.remove('drop-area-hidden'); document.body.classList.remove('has-results');
     document.getElementById('lbl-left').textContent = 'Original';
     _pp.scrollTop = 0;
@@ -2128,7 +2135,8 @@
     document.body.classList.remove('add-mode');
     zoomIdx = 0; activeEntry = null;
     toolbarEnable(false);
-    clearZones(); currentJobId = null;
+    if (!keepFiles) clearZones();
+    currentJobId = null;
     activeEls = [];
     deletedIndices = new Set();
     reviewedIndices = new Set();

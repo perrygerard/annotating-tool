@@ -185,7 +185,7 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
                 boxes.setdefault(pn, []).append(fitz.Rect(a.rect))
 
     results = {"total": 0, "matched": 0, "unmatched": 0, "moved": 0, "needs_look": 0,
-               "content_removed": 0, "skipped": [], "annotations": [], "derivative": True}
+               "content_removed": 0, "skipped": [], "annotations": []}
     words_cache = {}
 
     def page_words(pn):

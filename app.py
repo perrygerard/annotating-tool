@@ -67,6 +67,44 @@ def index():
     return render_template("index.html")
 
 
+def _shape(path):
+    """(page count, median width/height) of a PDF; width is the page without a Carryover sidebar."""
+    import statistics
+    import pymupdf
+    d = pymupdf.open(path)
+    try:
+        ratios = []
+        for pg in d:
+            w = pg.rect.width
+            try:
+                v = d.xref_get_key(pg.xref, "CPOrigW")[1]
+                if v and v != "null":
+                    w = float(v)
+            except Exception:
+                pass
+            ratios.append(w / max(1.0, pg.rect.height))
+        return len(d), (statistics.median(ratios) if ratios else 1.0)
+    finally:
+        d.close()
+
+
+def detect_relationship(old_path, new_path):
+    """Is the new PDF an updated version of the annotated one, or a different (derivative) asset?
+    Returns (mode, reason). A revision keeps roughly the same number of pages; a derivative is
+    usually much shorter or longer, or a different page shape."""
+    try:
+        n_old, r_old = _shape(old_path)
+        n_new, r_new = _shape(new_path)
+    except Exception:
+        return "update", "Could not compare the files, so they were treated as versions of the same document."
+    ratio = min(n_old, n_new) / max(n_old, n_new, 1)
+    if ratio < 0.6 and abs(n_old - n_new) >= 3:
+        return "derivative", f"Page counts differ a lot ({n_old} vs {n_new})."
+    if abs(r_old - r_new) / max(r_old, 1e-6) > 0.25:
+        return "derivative", "The page shape is different."
+    return "update", f"Same kind of document ({n_old} vs {n_new} pages)."
+
+
 @app.route("/remap", methods=["POST"])
 def remap():
     if "annotated_pdf" not in request.files or "new_pdf" not in request.files:
@@ -80,7 +118,7 @@ def remap():
     if not new_file.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Both files must be PDFs."}), 400
 
-    request_mode = request.form.get("mode", "update")
+    request_mode = request.form.get("mode", "auto")   # auto | update | derivative
     job_id = str(uuid.uuid4())
     annotated_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_annotated.pdf")
     new_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_new.pdf")
@@ -100,10 +138,30 @@ def remap():
                 if j and j.get("status") == "processing":
                     j["percent"] = round(pct, 1)
                     j["progress"] = text
-            fn = process_derivative if request_mode == "derivative" else process_pdfs
+            used, reason, auto = request_mode, "You chose this.", False
+            if request_mode == "auto":
+                auto = True
+                used, reason = detect_relationship(annotated_path, new_path)
+                prog(1, "Comparing the two files…")
+            fn = process_derivative if used == "derivative" else process_pdfs
             results = fn(annotated_path, new_path, output_path, prog)
             if _cancelled(job_id):
                 raise Cancelled()
+            if auto and used == "update" and results.get("total", 0) >= 5 \
+                    and results.get("moved", 0) / results["total"] < 0.2:
+                # Looked like a revision but almost nothing lined up: try it as a derivative and keep the better one.
+                prog(1, "Few callouts lined up, trying a different approach…")
+                alt = output_path[:-4] + "_d.pdf"
+                alt_res = process_derivative(annotated_path, new_path, alt, prog)
+                if alt_res.get("moved", 0) + alt_res.get("needs_look", 0) > results.get("moved", 0) + results.get("needs_look", 0):
+                    for suffix in ("", "_preview"):
+                        src, dst = alt[:-4] + suffix + ".pdf", output_path[:-4] + suffix + ".pdf"
+                        if os.path.exists(src):
+                            os.replace(src, dst)
+                    alt_res["_preview_path"] = output_path[:-4] + "_preview.pdf"
+                    results, used = alt_res, "derivative"
+                    reason = "Few callouts lined up as an updated version, so they were matched by wording instead."
+            results["mode_used"], results["mode_reason"], results["mode_auto"] = used, reason, auto
             if not results.get("total"):
                 raise ValueError(
                     "No annotations were found in the first PDF. Upload the reviewer-annotated PDF (with live "
