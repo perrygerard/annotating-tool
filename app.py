@@ -469,7 +469,13 @@ def confirm(job_id):
 
     try:
         eff = _effective_annots(all_annots, new_pdf_path, edits, new_boxes, overrides)
-        write_pdf(eff, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides, sides=sides, boxes=boxes)
+        tracking = data.get("tracking")
+        tracking_bytes = None
+        if isinstance(tracking, dict):
+            import json as _json
+            tracking_bytes = _json.dumps(tracking, separators=(",", ":")).encode("utf-8")[:2_000_000]
+        write_pdf(eff, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides, sides=sides, boxes=boxes,
+                  tracking=tracking_bytes)
         # Update the results annotation list to reflect deletions
         results = job["results"]
         results["annotations"] = [

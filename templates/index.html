@@ -614,7 +614,7 @@
     <div class="detail-panel">
       <!-- Stat tiles -->
       <div class="conf-card" id="conf-card" hidden>
-        <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">placement confidence</span></div>
+        <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">claims located</span></div>
         <div class="conf-bar"><i id="conf-bar-fill"></i></div>
         <div class="conf-sub" id="conf-sub"></div>
         <div class="conf-mode" id="conf-mode" hidden><span id="conf-mode-text"></span> <button type="button" class="conf-link" id="conf-rerun"></button></div>
@@ -749,7 +749,7 @@
     formData.append(cfg.fb, inputNew.files[0]);
     if (mode === 'update') formData.append('mode', force || 'auto');
 
-    setBusy(true); currentJobId = null;
+    setBusy(true); currentJobId = null; window._jobStart = Date.now();
     const titleEl = document.getElementById('progress-title'), detailEl = document.getElementById('progress-detail');
     const barEl = document.getElementById('progress-bar'), pctEl = document.getElementById('progress-pct');
     const elapsedEl = document.getElementById('progress-elapsed'), hintEl = document.getElementById('progress-hint');
@@ -953,7 +953,7 @@
     box.hidden = false;
   }
   function showResults(results) {
-    setBusy(false); cancelCtl = null;
+    setBusy(false); cancelCtl = null; window._resultsAt = Date.now(); window._results = results;
     deletedIndices = new Set();
     reviewedIndices = new Set();
     dotOverrides.clear();
@@ -1445,7 +1445,7 @@
     document.getElementById('conf-pct').textContent = pct + '%';
     document.getElementById('conf-bar-fill').style.width = pct + '%';
     document.getElementById('conf-sub').textContent = n
-      ? `${solid} of ${n} placed with confidence` + (look ? ` · ${look} to review` : ' · nothing left to review')
+      ? `${solid} of ${n} located with confidence` + (look ? ` · ${look} to review` : ' · nothing left to review')
       : 'No pins in play';
   }
   function setFilter(f) { activeFilter = f; updateFilters(); }
@@ -1917,6 +1917,41 @@
     tick(); dlTimer = setInterval(tick, 1000);
   }
 
+  // What the reviewer did with each pin, saved inside the exported PDF (an attached file, invisible in viewers).
+  function buildTracking() {
+    const reg = window._annRegistry || [], r = window._results || {};
+    const round = (v, n = 4) => (typeof v === 'number' && isFinite(v)) ? +v.toFixed(n) : null;
+    const pins = [];
+    reg.forEach(e => {
+      const a = e.ann; if (a.type === 'Square') return;
+      const k = a.index, pg = e.pg || {};
+      const W = pg.width || 1, H = pg.height || 1;
+      const ox = a.dot_x, oy = a.dot_y;
+      const ov = dotOverrides.get(k);
+      let action = 'untouched', dist = 0;
+      if (a.isNew) action = 'added';
+      else if (deletedIndices.has(k)) action = 'removed';
+      else {
+        if (ov && ox != null) { dist = Math.hypot((ov[0] - ox) * W, (ov[1] - oy) * H); if (dist > 2) action = 'moved'; }
+        if (action === 'untouched' && sideOverrides.has(k)) action = 'turned';
+        if (action === 'untouched' && contentEdits.has(k)) action = 'text_edited';
+      }
+      pins.push({ index: k, number: a.number == null ? null : a.number, page: pg.new_page_num || pg.page_num || null,
+        sub: a.sub_label || '', text: (a.content || '').slice(0, 60),
+        auto: a.isNew ? null : { status: a.status, method: a.method, confidence: a.confidence, x: round(ox), y: round(oy) },
+        action, moved_pt: Math.round(dist), final: ov ? [round(ov[0]), round(ov[1])] : null,
+        turned: sideOverrides.has(k), text_edited: contentEdits.has(k), adjusted_flag: reviewedIndices.has(k) });
+    });
+    const by = {}; pins.forEach(p => { if (!p.sub) by[p.action] = (by[p.action] || 0) + 1; });
+    return { schema: 1, exported_at: new Date().toISOString(), tool: 'Carryover',
+      mode_used: r.mode_used || (mode === 'add' ? 'place' : null), mode_auto: !!r.mode_auto, mode_reason: r.mode_reason || '',
+      auto_counts: { total: r.total, moved: r.moved, needs_look: r.needs_look, content_removed: r.content_removed },
+      processing_seconds: (window._resultsAt && window._jobStart) ? Math.round((window._resultsAt - window._jobStart) / 1000) : null,
+      review_seconds: window._resultsAt ? Math.round((Date.now() - window._resultsAt) / 1000) : null,
+      files: { annotated: inputAnnotated.files[0] ? inputAnnotated.files[0].name : '', new: inputNew.files[0] ? inputNew.files[0].name : '' },
+      summary: by, pins };
+  }
+
   async function confirmAndDownload() {
     if (!currentJobId) { toast('This session has expired — please upload your files again.'); return; }
     const btn = document.getElementById('confirm-btn');
@@ -1924,13 +1959,13 @@
     const fail = msg => { clearInterval(dlTimer); dlTimer = null; dlShow(msg, '', 'err'); btn.disabled = false; updateConfirmButton(); };
 
     try {
-      if (deletedIndices.size > 0 || dotOverrides.size > 0 || sideOverrides.size > 0 || boxEdits.size > 0 || contentEdits.size > 0 || newBoxPayload().length > 0) {
+      {
         dlStartClock('Applying your changes and building the PDF…');
         const res = await fetch(`/confirm/${currentJobId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ deleted_indices: [...deletedIndices], positions: Object.fromEntries(dotOverrides), sides: Object.fromEntries(sideOverrides),
-          boxes: Object.fromEntries(boxEdits), edits: Object.fromEntries(contentEdits), new_boxes: newBoxPayload() })
+          boxes: Object.fromEntries(boxEdits), edits: Object.fromEntries(contentEdits), new_boxes: newBoxPayload(), tracking: buildTracking() })
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));

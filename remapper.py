@@ -1784,7 +1784,7 @@ def _spread_entries(want, hts, gap, lo, hi):
 
 
 def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
-              overrides=None, draw_dots=True, sides=None, boxes=None, progress=None):
+              overrides=None, draw_dots=True, sides=None, boxes=None, progress=None, tracking=None):
     """Write annotations to a new PDF with a numbered reference sidebar.
 
     Each page is expanded rightward by SIDEBAR_W points. Annotations get:
@@ -1993,5 +1993,10 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             except Exception:
                 pass
 
+    if tracking and draw_dots:
+        try:                                   # what the reviewer did, as an attached file (not visible on the pages)
+            out_doc.embfile_add("carryover-tracking.json", tracking, desc="Carryover review tracking")
+        except Exception:
+            pass
     out_doc.save(output_path, garbage=4, deflate=True)
     out_doc.close()
