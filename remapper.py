@@ -1370,7 +1370,7 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, prog
             old_pw, old_ph = old_page.rect.width, old_page.rect.height
 
         overlay_annots = []
-        auto_pg = _auto_sides(annots_by_page[(page_num, out_pn)], pw, dot_r_pg * PIN_SCALE, S_pg)
+        auto_pg = _auto_sides(annots_by_page[(page_num, out_pn)], pw, dot_r_pg * PIN_SCALE, S_pg, _page_words(page, pw), ph)
         for info in annots_by_page[(page_num, out_pn)]:
             new_r = info.new_rect if info.new_rect else info.rect
             old_r = info.rect  # original position in old PDF
@@ -1509,23 +1509,51 @@ def _pin_dir(info):
     return 0 if _pin_side(info) >= 0 else 2
 
 
-def _auto_sides(infos, pw, r, S):
-    """Default pin direction per annotation (0..3), turned away when the body would land on a
-    neighbouring pin (targets that sit close together)."""
+def _page_words(page, pw):
+    """Word boxes on the page itself (not the sidebar), used to keep pin rings off the text."""
+    try:
+        return [fitz.Rect(w[:4]) for w in page.get_text("words") if w[0] < pw]
+    except Exception:
+        return []
+
+
+def _text_cover(words, rect):
+    """Area of `rect` that sits on words."""
+    tot = 0.0
+    for w in words:
+        if w.x1 < rect.x0 or w.x0 > rect.x1 or w.y1 < rect.y0 or w.y0 > rect.y1:
+            continue
+        i = w & rect
+        if not i.is_empty:
+            tot += i.width * i.height
+    return tot
+
+
+def _auto_sides(infos, pw, r, S, words=None, ph=None):
+    """Default pin direction per annotation (0..3). Each pin tries the four turns and takes the one whose
+    ring and stem cover the least text and clear the neighbouring pins; the side the reviewer's box was on
+    wins ties."""
     placed, out = [], {}
+    words = words or []
     order = sorted(infos, key=lambda i: (_anchor_point(i)[1], _anchor_point(i)[0]))
     for info in order:
         pref = _pin_dir(info)
-        pick = None
-        for d in (pref, (pref + 2) % 4, (pref + 1) % 4, (pref + 3) % 4):
+        best = None
+        for rank, d in enumerate((pref, (pref + 2) % 4, (pref + 1) % 4, (pref + 3) % 4)):
             px, py = _dot_position(info, pw, 0, r, S, d)
             c = _pin_body_center(px, py, r, d)
-            if all(math.hypot(c[0] - o[0], c[1] - o[1]) >= 2.05 * r for o in placed):
-                pick = (d, c); break
-        if pick is None:
-            px, py = _dot_position(info, pw, 0, r, S, pref)
-            pick = (pref, _pin_body_center(px, py, r, pref))
-        out[info.index] = pick[0]; placed.append(pick[1])
+            cx = max(r + 1, min(c[0], pw - r - 1))
+            cy = c[1] if ph is None else max(r + 1, min(c[1], ph - r - 1))
+            clash = any(math.hypot(cx - o[0], cy - o[1]) < 2.05 * r for o in placed)
+            cover = 0.0
+            if words:
+                ring = fitz.Rect(cx - r, cy - r, cx + r, cy + r)
+                stem = fitz.Rect(min(px, cx) - 1, min(py, cy) - 1, max(px, cx) + 1, max(py, cy) + 1)
+                cover = (_text_cover(words, ring) + 0.5 * _text_cover(words, stem)) / (r * r)
+            cost = (1000 if clash else 0) + cover + rank * 0.15
+            if best is None or cost < best[0]:
+                best = (cost, d, (cx, cy))
+        out[info.index] = best[1]; placed.append(best[2])
     return out
 
 
@@ -1933,7 +1961,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
         # ── Draw numbered dots on page content ──────────────────────────────
         PIN_R = DOT_R * PIN_SCALE
         pins_on_page = page_pins.get(page_num, [])
-        auto_sd = _auto_sides(pins_on_page, pw, PIN_R, S) if draw_dots else {}
+        auto_sd = _auto_sides(pins_on_page, pw, PIN_R, S, _page_words(page, pw), ph) if draw_dots else {}
         for info in pins_on_page:
             num = _pin_label(info, global_num[(_out_page(info), info.index)])
 
