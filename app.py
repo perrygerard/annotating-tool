@@ -582,7 +582,10 @@ def preview_original(job_id, page_num):
     if not annotated_path or not os.path.exists(annotated_path):
         abort(404)
     try:
-        png_bytes = _render_page_png(annotated_path, page_num)
+        w = request.args.get("w", type=int) or 640
+        w = max(320, min(w, 1920))
+        png_bytes = _render_page_png(annotated_path, page_num, target_width_px=w,
+                                     max_height_px=8000 if w <= 640 else 12000)
         if png_bytes is None:
             abort(404)
         from flask import Response

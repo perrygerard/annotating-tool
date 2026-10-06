@@ -878,7 +878,7 @@
   const COL_LABELS_HTML = `
     <div class="col-labels">
       <div class="col-label"><button type="button" class="cl-btn cl-left" data-act="toggle-orig" id="orig-btn" disabled>Hide original</button><span id="lbl-left">Original</span></div>
-      <div class="col-label"><button type="button" class="cl-btn cl-left show-orig" data-act="toggle-orig" id="show-orig-btn" disabled>Show original</button><span>Updated</span><div class="cl-right" role="group" aria-label="Zoom the updated pages"><div class="zoom-group">
+      <div class="col-label"><button type="button" class="cl-btn cl-left show-orig" data-act="toggle-orig" id="show-orig-btn" disabled>Show original</button><span>Updated</span><div class="cl-right" role="group" aria-label="Zoom the pages"><div class="zoom-group">
       <button type="button" class="cl-btn icon" data-act="zoom-out" aria-label="Zoom out" title="Zoom out" disabled>
         <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
       <button type="button" class="cl-btn zoom-val" data-act="zoom-reset" aria-label="Reset zoom" title="Reset zoom" id="zoom-val" disabled>100%</button>
@@ -891,6 +891,7 @@
   const zoomLevel = () => ZOOMS[zoomIdx];
   document.getElementById('pages-panel').insertAdjacentHTML('afterbegin', COL_LABELS_HTML);
 
+  function allScrollEls() { return (window._annRegistry || []).flatMap(e => [e.oldScrollEl, e.newScrollEl]).filter((el, i, a) => el && a.indexOf(el) === i); }
   function newScrollEls() { return (window._annRegistry || []).map(e => e.newScrollEl).filter((el, i, a) => el && a.indexOf(el) === i); }
 
   // Pick a preview resolution that matches how large the updated page is on screen
@@ -920,6 +921,8 @@
     panel.classList.toggle('orig-collapsed', on);
         try { localStorage.setItem('carryover.origCollapsed', on ? '1' : '0'); } catch (e) {}
     requestAnimationFrame(() => {
+      const nf = newScrollEls()[0];
+      if (nf) allScrollEls().forEach(o => { o.scrollLeft = nf.scrollLeft; });
       if (activeEntry) scrollToAnnotation(activeEntry);
       else panel.scrollTop = mid * panel.scrollHeight - panel.clientHeight / 2;
       refreshImages();
@@ -935,7 +938,7 @@
     const midX = first ? (first.scrollLeft + first.clientWidth / 2) / Math.max(1, first.scrollWidth) : 0.5;
     zoomIdx = idx;
     const z = zoomLevel();
-    newScrollEls().forEach(sc => {
+    allScrollEls().forEach(sc => {
       sc.classList.toggle('zoomed', z > 1);
       const fr = sc.firstElementChild;                          // .page-frame
       fr.style.width = (z * 100) + '%';
@@ -946,8 +949,7 @@
     document.querySelector('[data-act="zoom-out"]').disabled = zoomIdx === 0;
     document.querySelector('[data-act="zoom-in"]').disabled = zoomIdx === ZOOMS.length - 1;
     requestAnimationFrame(() => {
-      const f = newScrollEls()[0];
-      if (f) f.scrollLeft = midX * f.scrollWidth - f.clientWidth / 2;
+      allScrollEls().forEach(f => { f.scrollLeft = midX * f.scrollWidth - f.clientWidth / 2; });
       if (activeEntry) scrollToAnnotation(activeEntry);
       else panel.scrollTop = mid * panel.scrollHeight - panel.clientHeight / 2;
       refreshImages();
@@ -1067,17 +1069,26 @@
       const maxX = vbW * contentFrac;
       g._dir = ((ann.pin_dir | 0) % 4 + 4) % 4; g._defDir = g._dir;    // quarter turns: 0 ring to the right, 1 below, 2 left, 3 above
       g._off = [PIN_DIRS[g._dir][0] * PIN_L, PIN_DIRS[g._dir][1] * PIN_L];   // ring centre from the point, in ring radii (zoom-proof)
-      // Place by the POINT; the ring is clamped to stay on the page
+      // Place by the POINT; the ring stays on the page. The point keeps a small margin from the edge so it can always be grabbed.
+      const inset = () => r * 0.8;
       g._setPos = (px, py) => {
-        const cx = Math.max(r, Math.min(px + g._off[0] * r, maxX - r));
-        const cy = Math.max(r, Math.min(py + g._off[1] * r, vbH - r));
+        const m = inset();
+        px = Math.max(m, Math.min(px, maxX - m)); py = Math.max(m, Math.min(py, vbH - m));
+        let ox = g._off[0], oy = g._off[1];
+        // near an edge the ring would be squashed onto its own dot: swing it to the other side instead
+        if (!g._free) {
+          if (px + ox * r < r || px + ox * r > maxX - r) { const f = px - ox * r; if (f >= r && f <= maxX - r) ox = -ox; }
+          if (py + oy * r < r || py + oy * r > vbH - r) { const f = py - oy * r; if (f >= r && f <= vbH - r) oy = -oy; }
+        }
+        const cx = Math.max(r, Math.min(px + ox * r, maxX - r));
+        const cy = Math.max(r, Math.min(py + oy * r, vbH - r));
         stem.setAttribute('x1', px); stem.setAttribute('y1', py); stem.setAttribute('x2', cx); stem.setAttribute('y2', cy);
         dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.setAttribute('r', r * TIP_R);
         body.setAttribute('cx', cx); body.setAttribute('cy', cy); body.setAttribute('r', r);
-        hit.setAttribute('cx', px); hit.setAttribute('cy', py); hit.setAttribute('r', r * 0.6);
+        hit.setAttribute('cx', px); hit.setAttribute('cy', py); hit.setAttribute('r', r * 0.8);
         t.setAttribute('x', cx); t.setAttribute('y', cy);
         g.setAttribute('y', cy - r); g.setAttribute('height', 2 * r);   // used by scroll-to
-        g._px = px; g._py = py;
+        g._px = px; g._py = py; g._shown = [(cx - px) / r, (cy - py) / r];
       };
       g._setDir = d => { g._dir = ((d % 4) + 4) % 4; g._off = [PIN_DIRS[g._dir][0] * PIN_L, PIN_DIRS[g._dir][1] * PIN_L]; g._setPos(g._px, g._py); };
       g._setOff = (kx, ky) => { g._off = [kx, ky]; g._setPos(g._px, g._py); };
@@ -1094,9 +1105,10 @@
       g.addEventListener('pointerdown', ev => {
         if (ev.button !== undefined && ev.button !== 0) return;
         dragging = true; moved = false; sx = ev.clientX; sy = ev.clientY;
-        p0 = toSvg(ev); start = { x: g._px, y: g._py }; offStart = g._off.slice();
+        p0 = toSvg(ev); start = { x: g._px, y: g._py }; offStart = (g._shown || g._off).slice();
         // the dot aims the pin; the number places it round the dot; Shift on the number moves the whole pin
         mode = ev.target === hit || ev.target === dot ? 'point' : (ev.shiftKey ? 'whole' : 'ring');
+        if (mode === 'ring') { g._free = true; g._off = offStart.slice(); }
         try { g.setPointerCapture(ev.pointerId); } catch (e) {}
         ev.preventDefault();
       });
@@ -1112,13 +1124,14 @@
           return;
         }
         let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
-        nx = Math.max(0, Math.min(nx, maxX)); ny = Math.max(0, Math.min(ny, vbH));      // the point stays on the page
+        nx = Math.max(0, Math.min(nx, maxX)); ny = Math.max(0, Math.min(ny, vbH));      // the point stays on the page (_setPos keeps a grab margin)
         g._setPos(nx, ny);
       });
       const end = ev => {
         if (!dragging) return;
-        dragging = false; g.classList.remove('dragging');
+        dragging = false; g.classList.remove('dragging'); g._free = false;
         try { g.releasePointerCapture(ev.pointerId); } catch (e) {}
+        if (!moved && mode === 'ring') g._off = offStart.slice();
         if (moved && mode === 'ring') onRingMoved(ann.index, g._off, offStart);
         else if (moved) onMarkerMoved(ann.index, g._px / vbW, g._py / vbH);
       };
@@ -1239,15 +1252,9 @@
       // Image always fills the aspect-ratio box absolutely
       img.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;';
       // Retry up to 3 times on error (race between job completion and first render)
-      if (rectClass === 'ann-rect') {
-        img.dataset.base = imgSrc;                 // updated side: sharpness follows zoom (see loadImg)
+      if (imgSrc) {
+        img.dataset.base = imgSrc;                 // both sides: sharpness follows zoom (see loadImg)
         newImgsToObserve.push(img);
-      } else if (imgSrc) {
-        let retries = 0;
-        img.onerror = () => {
-          if (retries++ < 3) setTimeout(() => { img.src = imgSrc + '?r=' + retries; }, 800 * retries);
-        };
-        img.dataset.src = imgSrc;
       }
       frame.appendChild(img);
 
@@ -1381,8 +1388,8 @@
       });
     }, { root: panel, rootMargin: '600px' });
     newImgsToObserve.forEach(img => newImgObserver.observe(img));
-    // Pan the zoomed pages together
-    const scs = newScrollEls();
+    // Pan the zoomed pages together (original and updated)
+    const scs = allScrollEls();
     let syncing = false;
     scs.forEach(sc => sc.addEventListener('scroll', () => {
       if (syncing) return;
