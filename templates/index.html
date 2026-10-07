@@ -114,6 +114,11 @@
     .page-num-label { display: inline-block; font-family: var(--mono); font-size: 0.7rem; font-weight: 700; color: var(--ink); background: var(--surface); border-radius: 6px; padding: 3px 9px; margin-bottom: 10px; letter-spacing: .02em; box-shadow: 0 1px 2px rgba(18,22,28,.08); }
     .page-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .page-side { min-width: 0; }
+    /* Derivative: many source pages feed one updated page, so they stack beside it (and stay in view as you scroll the updated page) */
+    .page-side.orig-col { align-self: start; position: sticky; top: 8px; }
+    .orig-stack { display: flex; flex-direction: column; gap: 16px; max-height: calc(100vh - 190px); overflow-y: auto; padding: 2px 6px 2px 2px; scrollbar-gutter: stable; }
+    .orig-stack .page-num-label { align-self: flex-start; margin-bottom: 0; }
+    .orig-stack .src-page { display: flex; flex-direction: column; gap: 6px; }
     .page-side-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-light); margin-bottom: 4px; display: flex; align-items: center; gap: 5px; }
     .page-side-label .side-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
     .side-dot.old { background: var(--ink-light); }
@@ -1301,7 +1306,7 @@
       return { sideEl: side, scrollEl: scroll, rects, svg, frame };
     }
 
-    (results.pages || []).forEach(pg => {
+    const buildSingle = pg => {
       const block = document.createElement('div');
       block.className = 'page-block';
 
@@ -1354,7 +1359,67 @@
       pair.appendChild(newSide.sideEl);
       block.appendChild(pair);
       panel.appendChild(block);
-    });
+    };
+
+    // Derivative: several source pages can land on the same updated page (80 website pages -> 1 email).
+    // Show that updated page once with every pin on it, and the source pages that feed it in a stack beside it.
+    const buildGroup = group => {
+      const first = group[0];
+      const block = document.createElement('div');
+      block.className = 'page-block';
+      const numLabel = document.createElement('div');
+      numLabel.className = 'page-num-label';
+      const srcNums = group.map(g => g.page_num);
+      numLabel.textContent = `Updated page ${first.new_page_num || first.page_num} · from ${group.length} source pages`;
+      block.appendChild(numLabel);
+      const pair = document.createElement('div');
+      pair.className = 'page-pair';
+
+      const col = document.createElement('div'); col.className = 'page-side orig-col';
+      const stack = document.createElement('div'); stack.className = 'orig-stack';
+      col.appendChild(stack);
+      const all = [];
+      const oldSides = group.map(pg => {
+        const w = document.createElement('div'); w.className = 'src-page';
+        const lb = document.createElement('div'); lb.className = 'page-num-label'; lb.textContent = `Source page ${pg.page_num}`;
+        w.appendChild(lb);
+        const os = makePageSide(addMode ? '' : `/preview-original/${currentJobId}/${pg.page_num}`,
+          pg.old_width || pg.width, pg.old_height || pg.height, pg.old_aspect || pg.aspect,
+          pg.annotations, 'ann-rect-old', 'old_', (pg.old_aspect || pg.aspect) > 1.5);
+        w.appendChild(os.sideEl); stack.appendChild(w);
+        pg.annotations.forEach(a => all.push(a));
+        return os;
+      });
+      const newSide = makePageSide(`/preview/${currentJobId}/${first.new_page_num || first.page_num}`,
+        first.width, first.height, first.aspect, all, 'ann-rect', '', first.aspect > 1.5, first.content_frac || 1);
+      newSide.frame._pg = first;
+      let off = 0;
+      group.forEach((pg, gi) => {
+        const os = oldSides[gi];
+        pg._newSvg = newSide.svg; pg._newScroll = newSide.scrollEl; pg._oldSvg = os.svg; pg._oldScroll = os.scrollEl;
+        pg.annotations.forEach((ann, i) => {
+          const idx = annRegistry.length;
+          annRegistry.push({ oldRectEl: os.rects[i], newRectEl: newSide.rects[off + i], oldScrollEl: os.scrollEl, newScrollEl: newSide.scrollEl, ann, pg });
+          const handler = () => selectAnnotation(idx);
+          os.rects[i].addEventListener('click', handler);
+          newSide.rects[off + i].addEventListener('click', handler);
+        });
+        off += pg.annotations.length;
+      });
+      pair.appendChild(col);
+      pair.appendChild(newSide.sideEl);
+      block.appendChild(pair);
+      panel.appendChild(block);
+    };
+
+    {
+      const list = results.pages || [], groups = [];
+      if (results.mode_used === 'derivative') {
+        const by = new Map();
+        list.forEach(pg => { const k = pg.new_page_num || pg.page_num; if (!by.has(k)) { by.set(k, []); groups.push(by.get(k)); } by.get(k).push(pg); });
+      } else list.forEach(pg => groups.push([pg]));
+      groups.forEach(g => g.length > 1 ? buildGroup(g) : buildSingle(g[0]));
+    }
 
     window._annRegistry = annRegistry;
     window._builders = { buildPin, buildBox, svgEl };
@@ -1425,6 +1490,13 @@
     const hidden = entry.newRectEl.classList.contains('ann-mark-hidden');
     const el = hidden ? entry.oldRectEl : entry.newRectEl;      // rectangles only exist on the old side
     if (!panel || !el) return;
+    const stack = entry.oldRectEl && entry.oldRectEl.closest && entry.oldRectEl.closest('.orig-stack');
+    if (stack) {                                                  // derivative: bring the source page into the middle of its stack
+      let o = entry.oldRectEl.getBoundingClientRect();
+      if (!o.width && !o.height) { const sp = entry.oldRectEl.closest('.src-page'); if (sp) o = sp.getBoundingClientRect(); }   // marker hidden: use its page
+      const sr = stack.getBoundingClientRect();
+      stack.scrollTo({ top: Math.max(0, stack.scrollTop + (o.top - sr.top) - (o.height > stack.clientHeight * 0.8 ? 8 : stack.clientHeight / 2 - o.height / 2)), behavior: 'smooth' });
+    }
     const r = el.getBoundingClientRect(), pr = panel.getBoundingClientRect();
     const top = panel.scrollTop + (r.top - pr.top) - panel.clientHeight / 2 + r.height / 2;
     panel.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
