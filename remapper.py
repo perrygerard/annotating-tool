@@ -8,6 +8,17 @@ Supports both live-text PDFs (text fingerprinting) and image/bitmap PDFs
 """
 
 import fitz  # PyMuPDF
+
+# Every shape/text we draw ends in Page.wrap_contents(), which re-reads the page's ENTIRE content stream to balance
+# q/Q. With hundreds of pins on one big page (80 pages' claims landing on a single email) that made the export
+# quadratic and minutes long. Balance each page once; what we add afterwards is self-contained.
+_orig_wrap_contents = fitz.Page.wrap_contents
+def _wrap_contents_once(self):
+    if getattr(self, "_co_wrapped", False):
+        return
+    _orig_wrap_contents(self)
+    self._co_wrapped = True
+fitz.Page.wrap_contents = _wrap_contents_once
 import re
 import math
 from dataclasses import dataclass, field
