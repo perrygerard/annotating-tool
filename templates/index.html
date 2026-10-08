@@ -500,6 +500,9 @@
     .orig-collapsed .col-label:first-child { display: none; }
     .orig-collapsed .page-pair { grid-template-columns: minmax(0, 1fr); }
     .orig-collapsed .page-pair > .page-side:first-child { display: none; }
+    #lost-bar { position: fixed; left: 50%; top: 68px; transform: translateX(-50%); z-index: 80; max-width: min(640px, calc(100vw - 32px)); display: none; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 12px; background: #fff7ed; color: #7c2d12; box-shadow: 0 0 0 1px #fdba74, 0 12px 28px -10px rgb(15 23 42 / .3); font-size: .86rem; line-height: 1.4; }
+    #lost-bar.show { display: flex; }
+    #lost-bar button { flex: none; height: 32px; padding: 0 14px; border-radius: 8px; border: 0; background: #7c2d12; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
     .page-scroll.zoomed { overflow-x: auto; overflow-y: hidden; }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
@@ -551,6 +554,7 @@
 </div>
 
 <!-- ── Results screen ── -->
+<div id="lost-bar" role="alert"><span>The server no longer has this review (it was restarted or timed out). Your edits are still on this page: save them as a data file before you leave.</span><button type="button" id="lost-save">Save my review data</button></div>
 <div id="results-screen" class="visible">
   <div class="toolbar" id="toolbar" role="toolbar" aria-label="Review actions">
     <div class="tb-group">
@@ -2093,11 +2097,30 @@
       summary: by, pins };
   }
 
+  // ── Keep the review alive, and never lose the work if the server forgets it ──
+  function saveReviewData() {
+    try {
+      const blob = new Blob([JSON.stringify(buildTracking(), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'carryover-review-data.json';
+      document.body.appendChild(a); a.click(); setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 1000);
+    } catch (e) { toast('Could not build the review data file.'); }
+  }
+  function showLost() { const b = document.getElementById('lost-bar'); if (b) b.classList.add('show'); }
+  document.getElementById('lost-save').addEventListener('click', saveReviewData);
+  setInterval(async () => {
+    if (!currentJobId || !document.body.classList.contains('has-results')) return;
+    try {
+      const r = await fetch('/ping/' + currentJobId, { cache: 'no-store' });
+      const j = r.ok ? await r.json() : { alive: false };
+      if (!j.alive) showLost();
+    } catch (e) { /* offline for a moment: try again next time */ }
+  }, 4 * 60 * 1000);
+
   async function confirmAndDownload() {
     if (!currentJobId) { toast('This session has expired — please upload your files again.'); return; }
     const btn = document.getElementById('confirm-btn');
     btn.disabled = true;
-    const fail = msg => { clearInterval(dlTimer); dlTimer = null; dlShow(msg, '', 'err'); btn.disabled = false; updateConfirmButton(); };
+    const fail = (msg, gone) => { clearInterval(dlTimer); dlTimer = null; dlShow(msg, '', 'err'); btn.disabled = false; updateConfirmButton(); if (gone) showLost(); };
 
     try {
       {
@@ -2110,7 +2133,7 @@
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
-          return fail('Couldn’t save your changes: ' + (d.error || (res.status === 404 ? 'the session may have expired, please upload again.' : httpErrorMessage(res.status))));
+          return fail('Couldn’t save your changes: ' + (d.error || (res.status === 404 ? 'the session may have expired, please upload again.' : httpErrorMessage(res.status))), res.status === 404);
         }
         clearInterval(dlTimer); dlTimer = null;
       }
@@ -2121,7 +2144,7 @@
       if (!chk.ok) {
         return fail(chk.status === 404
           ? 'The PDF is no longer available — the session may have expired. Please upload your files again.'
-          : 'Download failed. ' + httpErrorMessage(chk.status));
+          : 'Download failed. ' + httpErrorMessage(chk.status), chk.status === 404);
       }
       const bytes = parseInt(chk.headers.get('Content-Length') || '0', 10);
       const size = bytes ? ' (' + (bytes / 1048576).toFixed(bytes > 10485760 ? 0 : 1) + ' MB)' : '';
@@ -2311,6 +2334,7 @@
   };
 
   function resetForm(keepFiles) {
+    { const lb = document.getElementById('lost-bar'); if (lb) lb.classList.remove('show'); }
     document.getElementById('header-actions').hidden = true;
     const _pp = document.getElementById('pages-panel');
     [..._pp.children].forEach(el => { if (!el.classList.contains('col-labels') && el.id !== 'ghost-pages' && el.id !== 'drop-area') el.remove(); });

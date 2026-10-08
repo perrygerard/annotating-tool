@@ -25,8 +25,8 @@ jobs = {}
 
 def cleanup_old_files():
     while True:
-        time.sleep(3600)
-        cutoff = time.time() - 3600
+        time.sleep(1800)
+        cutoff = time.time() - 4 * 3600      # a review in progress keeps its files fresh via /ping
         for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
             for fname in os.listdir(folder):
                 fpath = os.path.join(folder, fname)
@@ -327,6 +327,23 @@ def status(job_id):
     # Strip server-only fields that aren't JSON-serialisable
     safe = {k: v for k, v in job.items() if not k.startswith("_")}
     return jsonify(safe)
+
+
+@app.route("/ping/<job_id>")
+def ping(job_id):
+    """Keep-alive for an open review: tells the page whether the server still has its job, and keeps the files
+    from being cleaned up (and the host from spinning the app down) while someone is reviewing."""
+    job = jobs.get(job_id)
+    alive = bool(job and job.get("status") == "done")
+    if alive:
+        for k in ("annotated_path", "new_pdf_path", "output_path", "preview_path"):
+            pth = job.get(k)
+            if pth and os.path.exists(pth):
+                try: os.utime(pth, None)
+                except OSError: pass
+        if not os.path.exists(job.get("new_pdf_path") or ""):
+            alive = False
+    return jsonify({"alive": alive})
 
 
 @app.route("/download/<job_id>")
