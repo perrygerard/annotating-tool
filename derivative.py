@@ -121,12 +121,12 @@ def locate(idx, claim_toks):
     Returns (coverage 0-1 of the claim's informative tokens, page, rect)."""
     from difflib import SequenceMatcher
     if not claim_toks:
-        return 0.0, None, None
+        return 0.0, None, None, 0.0
     mapped = [idx.fuzzy(t) or t for t in claim_toks]
     info = [t for t in mapped if t not in idx.generic]
     if not info:
-        return 0.0, None, None
-    best = (0.0, None, None)
+        return 0.0, None, None, 0.0
+    best = (0.0, None, None, 0.0)
     for pn, ws in enumerate(idx.pages):
         if len(ws) < 2:
             continue
@@ -147,7 +147,8 @@ def locate(idx, claim_toks):
             r = fitz.Rect(rects[0])
             for q in rects[1:]:
                 r |= q
-            best = (cov, pn, r)
+            hs = sorted(q.height for q in rects)
+            best = (cov, pn, r, hs[len(hs) // 2])
     return best
 
 
@@ -159,6 +160,55 @@ def grade(cov, n_tokens):
     if cov >= 0.25:
         return "check"      # same claim, wording changed (or OCR noise): a person confirms
     return "not_in_piece"
+
+
+# ── which source callouts are 'the same thing' ───────────────────────────────
+
+def claim_key(text):
+    """A reference id, a link target or an alt-tag text identifies what a callout is about; None for free text."""
+    t = (text or "").replace("\u2028", " ")
+    m = re.search(r"REF-(\d+)", t)
+    if m:
+        return "ref" + m.group(1)
+    m = re.search(r"(https?://[^\s]+|www\.[^\s]+)", t)
+    if m:
+        return "url:" + m.group(1).rstrip("/").lower()
+    m = re.search(r"<alt tag:\s*([^>]*)", t, re.I)
+    if m:
+        return "alt:" + re.sub(r"\s+", " ", m.group(1)).strip().lower()[:40]
+    return None
+
+
+def _drop_duplicates(all_annots, results, radius=150):
+    """The same reference / link / alt text cited on several source pages should land in the piece once:
+    when two of them end up on the same spot, keep the better match and leave the other out."""
+    rank = {"moved": 0, "needs_look": 1}
+    groups = {}
+    for k, info in enumerate(all_annots):
+        key = claim_key(info.content)
+        if key and info.status in rank and info.new_vertices:
+            groups.setdefault(key, []).append(k)
+    for key, ks in groups.items():
+        ks.sort(key=lambda k: (rank[all_annots[k].status], -all_annots[k].match_confidence, k))
+        kept = []
+        for k in ks:
+            info = all_annots[k]
+            tx, ty = info.new_vertices[0]
+            twin = next((j for j in kept if all_annots[j].new_page_num == info.new_page_num and
+                         abs(all_annots[j].new_vertices[0][0] - tx) < radius and abs(all_annots[j].new_vertices[0][1] - ty) < radius), None)
+            if twin is None:
+                kept.append(k)
+                continue
+            was = info.status
+            results["moved" if was == "moved" else "needs_look"] -= 1
+            results["matched"] -= 1
+            results["content_removed"] += 1
+            results["unmatched"] += 1
+            info.status, info.match_method, info.match_confidence = "content_removed", "absent", 0.0
+            info.matched = False
+            info.match_note = "Same as another callout that was already carried over from a different source page."
+            e = results["annotations"][k]
+            e["status"], e["method"], e["confidence"], e["note"] = "content_removed", "absent", "0%", info.match_note
 
 
 # ── app entry point ──────────────────────────────────────────────────────────
@@ -208,7 +258,7 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
         pa = page.rect.get_area()
         ws, how = claim_words(page_words(pn), c["tip"], boxes.get(pn, []), max_area=0.35 * pa)
         toks = tokens([w[0] for w in ws])
-        cov, fp, rect = locate(idx, toks)
+        cov, fp, rect, dh = locate(idx, toks)
         g = grade(cov, len(set(toks)))
         if fp is None and g != "not_in_piece":
             g = "not_in_piece"
@@ -234,9 +284,22 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
             results["unmatched"] += 1
         else:
             cy = (rect.y0 + rect.y1) / 2
+            tx, ty = rect.x1, cy
+            # Keep where the callout pointed relative to the claim's text (an icon under a label, a button beside
+            # it), scaled by how much smaller/larger the type is here. Otherwise every callout near the same words
+            # collapses onto the same spot.
+            if ws and dh:
+                sh = sorted(w[4] - w[2] for w in ws)
+                sc = max(0.25, min(3.0, dh / max(1.0, sh[len(sh) // 2])))
+                sr = fitz.Rect(min(w[1] for w in ws), min(w[2] for w in ws), max(w[3] for w in ws), max(w[4] for w in ws))
+                ox, oy = (c["tip"][0] - sr.x1) * sc, (c["tip"][1] - (sr.y0 + sr.y1) / 2) * sc
+                lim = 220
+                dpg = deriv[fp].rect
+                tx = min(max(rect.x1 + max(-lim, min(lim, ox)), dpg.x0 + 4), dpg.x1 - 4)
+                ty = min(max(cy + max(-lim, min(lim, oy)), dpg.y0 + 4), dpg.y1 - 4)
             info.new_page_num = fp
             info.new_rect = fitz.Rect(rect)
-            info.new_vertices = [(rect.x1, cy), (rect.x1 + 30, cy)]
+            info.new_vertices = [(tx, ty), (tx + 30, ty)]
             info.matched = True
             info.match_confidence = min(1.0, cov)
             info.match_method = "claim"
@@ -257,5 +320,6 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
             "author": info.author, "status": info.status,
             "confidence": f"{info.match_confidence:.0%}", "method": info.match_method,
             "note": info.match_note, "parent_index": None})
+    _drop_duplicates(all_annots, results)
     src.close(); clean.close(); deriv.close()
     return R._finalize(results, all_annots, src_path, deriv_path, output_path, progress)
