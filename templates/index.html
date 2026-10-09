@@ -218,6 +218,7 @@
     .brand-logo { flex: none; height: 26px; width: auto; margin-left: 0; display: block; }
     .header-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
     .header-actions[hidden] { display: none; }
+    .header-actions .conf-link.hdr-link { font-size: .8rem; font-weight: 600; white-space: nowrap; }
     .hdr-switch { display: flex; align-items: center; gap: 7px; font-size: .8rem; font-weight: 600; color: #334155; cursor: pointer; white-space: nowrap; }
     .hdr-switch input { width: 15px; height: 15px; accent-color: #4449F2; cursor: pointer; }
     .header-actions .confirm-hint { margin: 0; min-height: 0; color: var(--ink-light); font-size: 0.76rem; }
@@ -572,7 +573,7 @@
 </svg>
   <div class="header-actions" id="header-actions" hidden>
     <span class="confirm-hint" id="confirm-hint"></span>
-    <label class="hdr-switch" id="conf-colors" title="Preview the pin colors you picked for the export"><input type="checkbox" id="conf-colors-cb"> Show export pin colors</label>
+    <span id="conf-mode" hidden><button type="button" class="conf-link hdr-link" id="conf-rerun"></button></span>
     <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
@@ -681,7 +682,7 @@
         <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">claims located</span></div>
         <div class="conf-bar"><i id="conf-bar-fill"></i></div>
         <div class="conf-sub" id="conf-sub"></div>
-        <div class="conf-mode" id="conf-mode" hidden><span id="conf-mode-text"></span> <button type="button" class="conf-link" id="conf-rerun"></button></div>
+        <div class="conf-mode" id="conf-colors"><label class="conf-switch"><input type="checkbox" id="conf-colors-cb"> Show export pin colors</label></div>
       </div>
       <div class="detail-header filter-title" id="filter-title">Filter</div>
       <div class="summary-tiles" role="group" aria-label="Filter references">
@@ -1030,7 +1031,6 @@
     const box = document.getElementById('conf-mode'); lastMode = results.mode_used || null;
     if (!lastMode || mode === 'add') { box.hidden = true; return; }
     const deriv = lastMode === 'derivative';
-    document.getElementById('conf-mode-text').textContent = (results.mode_auto ? 'Detected ' : 'Matched as ') + (deriv ? 'a derivative asset' : 'an updated version') + '. ' + (results.mode_reason || '');
     const b = document.getElementById('conf-rerun');
     b.textContent = deriv ? 'Re-run as updated version' : 'Re-run as derivative asset';
     b.onclick = () => { pendingOverride = { from: lastMode, to: deriv ? 'update' : 'derivative', stage: 'review' }; resetForm(true); submitJob(deriv ? 'update' : 'derivative'); };
