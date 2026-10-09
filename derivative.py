@@ -121,18 +121,18 @@ def locate(idx, claim_toks):
     Returns (coverage 0-1 of the claim's informative tokens, page, rect)."""
     from difflib import SequenceMatcher
     if not claim_toks:
-        return 0.0, None, None, 0.0
+        return 0.0, None, None, 0.0, []
     mapped = [idx.fuzzy(t) or t for t in claim_toks]
     info = [t for t in mapped if t not in idx.generic]
     if not info:
-        return 0.0, None, None, 0.0
-    best = (0.0, None, None, 0.0)
+        return 0.0, None, None, 0.0, []
+    best = (0.0, None, None, 0.0, [])
     for pn, ws in enumerate(idx.pages):
         if len(ws) < 2:
             continue
         toks = [t for t, _ in ws]
         sm = SequenceMatcher(None, mapped, toks, autojunk=False)
-        got, rects = 0, []
+        got, rects, pairs = 0, [], []
         for blk in sm.get_matching_blocks():
             if blk.size < 2:
                 continue
@@ -142,13 +142,14 @@ def locate(idx, claim_toks):
                 continue
             got += n_inf
             rects += [ws[blk.b + i][1] for i in range(blk.size)]
+            pairs += [(blk.a + i, fitz.Rect(ws[blk.b + i][1])) for i in range(blk.size)]
         cov = got / len(info)
         if cov > best[0] and rects:
             r = fitz.Rect(rects[0])
             for q in rects[1:]:
                 r |= q
             hs = sorted(q.height for q in rects)
-            best = (cov, pn, r, hs[len(hs) // 2])
+            best = (cov, pn, r, hs[len(hs) // 2], pairs)
     return best
 
 
@@ -258,7 +259,7 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
         pa = page.rect.get_area()
         ws, how = claim_words(page_words(pn), c["tip"], boxes.get(pn, []), max_area=0.35 * pa)
         toks = tokens([w[0] for w in ws])
-        cov, fp, rect, dh = locate(idx, toks)
+        cov, fp, rect, dh, pairs = locate(idx, toks)
         g = grade(cov, len(set(toks)))
         if fp is None and g != "not_in_piece":
             g = "not_in_piece"
@@ -285,17 +286,34 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
         else:
             cy = (rect.y0 + rect.y1) / 2
             tx, ty = rect.x1, cy
+            # Anchor on the word the callout actually points at, not on the whole matched block: the claim
+            # window spans several lines/cards, and its union rectangle's right edge is nowhere in particular.
+            anc = None
+            if ws and pairs and dh and rect.height > 3.5 * dh and cov >= 0.6:
+                tp = c["tip"]
+                wi = min(range(len(ws)), key=lambda i: (((ws[i][1] + ws[i][3]) / 2 - tp[0]) ** 2 + ((ws[i][2] + ws[i][4]) / 2 - tp[1]) ** 2))
+                ti = wi / max(1, len(ws) - 1) * max(0, len(toks) - 1)
+                a_i, a_r = min(pairs, key=lambda p: abs(p[0] - ti))
+                anc = (ws[wi], a_r)
+                cy = (a_r.y0 + a_r.y1) / 2
+                tx, ty = a_r.x1, cy
             # Keep where the callout pointed relative to the claim's text (an icon under a label, a button beside
             # it), scaled by how much smaller/larger the type is here. Otherwise every callout near the same words
             # collapses onto the same spot.
             if ws and dh:
                 sh = sorted(w[4] - w[2] for w in ws)
                 sc = max(0.25, min(3.0, dh / max(1.0, sh[len(sh) // 2])))
-                sr = fitz.Rect(min(w[1] for w in ws), min(w[2] for w in ws), max(w[3] for w in ws), max(w[4] for w in ws))
-                ox, oy = (c["tip"][0] - sr.x1) * sc, (c["tip"][1] - (sr.y0 + sr.y1) / 2) * sc
+                if anc:
+                    aw = anc[0]
+                    ox, oy = (c["tip"][0] - aw[3]) * sc, (c["tip"][1] - (aw[2] + aw[4]) / 2) * sc
+                    bx = anc[1].x1
+                else:
+                    sr = fitz.Rect(min(w[1] for w in ws), min(w[2] for w in ws), max(w[3] for w in ws), max(w[4] for w in ws))
+                    ox, oy = (c["tip"][0] - sr.x1) * sc, (c["tip"][1] - (sr.y0 + sr.y1) / 2) * sc
+                    bx = rect.x1
                 lim = 220
                 dpg = deriv[fp].rect
-                tx = min(max(rect.x1 + max(-lim, min(lim, ox)), dpg.x0 + 4), dpg.x1 - 4)
+                tx = min(max(bx + max(-lim, min(lim, ox)), dpg.x0 + 4), dpg.x1 - 4)
                 ty = min(max(cy + max(-lim, min(lim, oy)), dpg.y0 + 4), dpg.y1 - 4)
             info.new_page_num = fp
             info.new_rect = fitz.Rect(rect)
