@@ -144,7 +144,7 @@
     .ann-mark.exp .pin-stem { stroke: var(--xc); }
     .ann-mark.exp .pin-dot { fill: var(--xc); }
     .ann-mark.exp text { fill: #fff; }
-    .swatches { display: flex; align-items: center; gap: 5px; margin: 10px 0 2px; flex-wrap: wrap; }
+    .swatches { display: flex; align-items: center; gap: 5px; margin: 0; padding: 16px 0 18px; flex-wrap: wrap; }
     .swatches .sw-lbl { font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-right: 0; white-space: nowrap; }
     .swatches .sw { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; background: var(--c); box-shadow: 0 0 0 1px #cbd5e1; cursor: pointer; padding: 0; }
     .swatches .sw:hover { box-shadow: 0 0 0 1px #64748b; }
@@ -218,6 +218,8 @@
     .brand-logo { flex: none; height: 26px; width: auto; margin-left: 0; display: block; }
     .header-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
     .header-actions[hidden] { display: none; }
+    .hdr-switch { display: flex; align-items: center; gap: 7px; font-size: .8rem; font-weight: 600; color: #334155; cursor: pointer; white-space: nowrap; }
+    .hdr-switch input { width: 15px; height: 15px; accent-color: #4449F2; cursor: pointer; }
     .header-actions .confirm-hint { margin: 0; min-height: 0; color: var(--ink-light); font-size: 0.76rem; }
     .header-actions .confirm-btn { width: auto; margin: 0; padding: 9px 18px; }
 
@@ -404,7 +406,22 @@
     .cl-right .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
     .show-orig { display: none !important; }
     .toolbar { flex: none; display: flex; align-items: center; gap: 10px; min-height: 52px; box-sizing: border-box; padding: 0 28px; background: #fff; border-bottom: 1px solid #e2e8f0; }
-    .tb-hint { margin-left: auto; font-size: .74rem; color: #64748b; white-space: nowrap; }
+    .tb-split { position: relative; display: flex; align-items: stretch; border-radius: 8px; background: #fff; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); }
+    .toolbar .tb-split .cl-btn { box-shadow: none; background: transparent; }
+    .toolbar .tb-split .cl-btn:hover:not(:disabled) { background: #f1f5f9; }
+    .toolbar .tb-split .tb-box { border-radius: 8px 0 0 8px !important; }
+    .toolbar .tb-split .tb-box.on { background: #0f172a; }
+    .toolbar .tb-split .tb-caret { padding: 0 10px !important; border-radius: 0 8px 8px 0 !important; border-left: 1px solid #cbd5e1; color: #334155; }
+    .tb-split .tb-caret svg { width: 16px; height: 16px; }
+    .tb-split .tb-caret[hidden] { display: none; }
+    .toolbar .tb-split.no-menu .tb-box { border-radius: 8px !important; }
+    .tb-split .tb-caret:disabled { opacity: .45; }
+    .tb-split .tb-caret.has-incl::after { content: ''; position: absolute; right: 6px; top: 6px; width: 6px; height: 6px; border-radius: 50%; background: #4449F2; }
+    .tb-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 280px; background: #fff; border-radius: 8px; padding: 6px; box-shadow: 0 0 0 1px #cbd5e1, 0 8px 24px rgb(15 23 42 / .14); }
+    .tb-menu[hidden] { display: none; }
+    .tb-menu .menu-item { white-space: nowrap; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 6px; font-size: .8rem; font-weight: 500; color: #334155; cursor: pointer; }
+    .tb-menu .menu-item:hover { background: #f1f5f9; }
+    .tb-menu .menu-item input { width: 15px; height: 15px; accent-color: #4449F2; }
     .tb-group { display: flex; align-items: center; gap: 10px; }
     .tb-sep { width: 1px; height: 22px; background: #e2e8f0; }
     .toolbar .cl-btn { font-size: 0.8rem; font-weight: 600; color: #334155; border-radius: 5px; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); }
@@ -555,6 +572,7 @@
 </svg>
   <div class="header-actions" id="header-actions" hidden>
     <span class="confirm-hint" id="confirm-hint"></span>
+    <label class="hdr-switch" id="conf-colors" title="Preview the pin colors you picked for the export"><input type="checkbox" id="conf-colors-cb"> Show export pin colors</label>
     <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
@@ -576,11 +594,16 @@
   <div class="toolbar" id="toolbar" role="toolbar" aria-label="Review actions">
     <div class="tb-group">
       <button type="button" class="cl-btn tb-add" data-act="add-pin" id="add-btn" aria-pressed="false" disabled title="Click on the Updated page to drop a new pin (Esc to stop)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add annotation</button>
+      <div class="tb-split">
       <button type="button" class="cl-btn tb-box" data-act="draw-box" id="draw-btn" aria-pressed="false" disabled title="Drag a box around text or artwork on the updated page (Esc to stop)">
         <svg class="box-ico" width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><rect x="1.25" y="1.25" width="15.5" height="11.5" rx="2.5"/></svg>Box</button>
+        <button type="button" class="cl-btn tb-caret" style="position:relative" id="box-menu-btn" aria-haspopup="true" aria-expanded="false" disabled title="Box options"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg></button>
+        <div class="tb-menu" id="box-menu" role="group" aria-label="Box options" hidden>
+          <label class="menu-item"><input type="checkbox" id="box-incl-cb"><span id="box-incl-text">Include boxes from the original</span></label>
+        </div>
+      </div>
     </div>
     <span class="tb-sep" aria-hidden="true"></span>
-    <span class="tb-hint" aria-hidden="true">Drag a pin to move it · drag its small dot to aim</span>
     <div class="tb-group">
       <button type="button" class="cl-btn" data-act="undo" id="undo-btn" disabled title="Undo (Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
       <button type="button" class="cl-btn" data-act="redo" id="redo-btn" disabled title="Redo (Shift+Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>Redo</button>
@@ -658,8 +681,6 @@
         <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">claims located</span></div>
         <div class="conf-bar"><i id="conf-bar-fill"></i></div>
         <div class="conf-sub" id="conf-sub"></div>
-        <div class="conf-mode" id="conf-colors" hidden><label class="conf-switch"><input type="checkbox" id="conf-colors-cb"> Show export pin colors</label></div>
-        <div class="conf-mode" id="conf-boxes" hidden><span id="conf-boxes-text"></span> <button type="button" class="conf-link" id="conf-boxes-btn"></button></div>
         <div class="conf-mode" id="conf-mode" hidden><span id="conf-mode-text"></span> <button type="button" class="conf-link" id="conf-rerun"></button></div>
       </div>
       <div class="detail-header filter-title" id="filter-title">Filter</div>
@@ -1809,14 +1830,14 @@
       if (e.newRectEl) e.newRectEl.style.display = off ? 'none' : '';
     });
     const list = carriedBoxes().filter(e => e.ann.placed !== false);
-    const row = document.getElementById('conf-boxes');
-    if (!list.length) { row.hidden = true; return; }
-    row.hidden = false;
-    const n = list.length;
-    document.getElementById('conf-boxes-text').textContent = boxesIncluded
-      ? `${n} box${n === 1 ? '' : 'es'} from the original carried over.`
-      : `${n} box${n === 1 ? '' : 'es'} from the original not carried over.`;
-    document.getElementById('conf-boxes-btn').textContent = boxesIncluded ? 'Leave them out' : 'Include boxes';
+    const n = list.length, caret = document.getElementById('box-menu-btn');
+    caret.hidden = !n; caret.disabled = !document.body.classList.contains('has-results');
+    caret.parentNode.classList.toggle('no-menu', !n);
+    document.getElementById('box-incl-cb').checked = boxesIncluded;
+    document.getElementById('box-incl-cb').disabled = !n;
+    document.getElementById('box-incl-text').textContent = n ? `Include ${n} box${n === 1 ? '' : 'es'} from the original` : 'No boxes in the original';
+    caret.title = boxesIncluded ? `Box options (${n} from the original included)` : 'Box options';
+    caret.classList.toggle('has-incl', boxesIncluded && n > 0);
   }
   function initBoxes() {
     offBoxes.clear(); boxesIncluded = false;
@@ -1828,7 +1849,14 @@
     carriedBoxes().forEach(e => { if (on) offBoxes.delete(e.ann.index); else offBoxes.add(e.ann.index); });
     applyBoxes(); updateConfirmButton();
   }
-  document.getElementById('conf-boxes-btn').addEventListener('click', () => setBoxesIncluded(!boxesIncluded));
+  document.getElementById('box-incl-cb').addEventListener('change', ev => setBoxesIncluded(ev.target.checked));
+  (function boxMenu() {
+    const btn = document.getElementById('box-menu-btn'), menu = document.getElementById('box-menu');
+    const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+    btn.addEventListener('click', ev => { ev.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute('aria-expanded', String(!menu.hidden)); });
+    document.addEventListener('click', ev => { if (!menu.hidden && !menu.contains(ev.target)) close(); });
+    document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !menu.hidden) close(); });
+  })();
   const allDeleted = () => [...new Set([...deletedIndices, ...offBoxes])];
 
   function renumber(silent) {
