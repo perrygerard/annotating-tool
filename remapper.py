@@ -829,6 +829,111 @@ def _stage(progress, lo, hi, text):
     return cb
 
 
+
+# ── Layout-shift correction (update mode) ────────────────────────────────────
+# When a new version has different page size / margins, the text matcher can land weak matches far away.
+# The confident matches reveal the systematic shift (x_new = a*x_old + b, per document); weak ones are placed with it.
+LAYOUT_CONF = 0.6
+
+
+def _tip_of(info):
+    if info.vertices:
+        return info.vertices[0]
+    r = info.rect
+    return ((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2)
+
+
+def _fit_axis(pairs, thr, iters=400):
+    """Robust line new = a*u + b through (u, new) pairs (RANSAC, then least squares on the agreeing ones).
+    u is already scaled to the new page, so a stays near 1."""
+    import random
+    rnd = random.Random(7)
+    best = None
+    for _ in range(iters):
+        (u1, n1), (u2, n2) = rnd.sample(pairs, 2)
+        if abs(u2 - u1) < thr * 2:
+            continue
+        a = (n2 - n1) / (u2 - u1)
+        if not 0.7 < a < 1.3:
+            continue
+        b = n1 - a * u1
+        inl = [(u, v) for u, v in pairs if abs(a * u + b - v) < thr]
+        if best is None or len(inl) > len(best[2]):
+            best = (a, b, inl)
+    if best is None:
+        return None
+    a, b, inl = best
+    if len(inl) >= 4:
+        n_ = len(inl); mu = sum(u for u, _ in inl) / n_; mv = sum(v for _, v in inl) / n_
+        var = sum((u - mu) ** 2 for u, _ in inl)
+        if var > 1e-6:
+            a2 = sum((u - mu) * (v - mv) for u, v in inl) / var
+            if 0.7 < a2 < 1.3:
+                a, b = a2, mv - a2 * mu
+    return a, b, len(inl)
+
+
+def apply_layout_shift(all_annots, old_doc, new_doc, results):
+    """Place weakly matched pins with the document's layout shift. Returns the number of pins moved."""
+    def scale(info):
+        op = old_doc[info.page_num].rect
+        pn = info.page_num if info.page_num < len(new_doc) else None
+        if pn is None:
+            return None
+        np_ = new_doc[pn].rect
+        return np_.width / op.width, np_.height / op.height, np_
+    anchors = []
+    for info in all_annots:
+        if (info.matched and info.match_confidence >= LAYOUT_CONF and info.status == "moved" and info.parent_index is None
+                and info.annot_type[0] == ANNOT_FREETEXT and info.new_vertices and info.page_num < len(new_doc)
+                and (info.new_page_num is None or info.new_page_num == info.page_num)):
+            sc = scale(info)
+            if sc:
+                tx, ty = _tip_of(info)
+                anchors.append((tx * sc[0], info.new_vertices[0][0]))
+    model_x = None
+    if len(anchors) >= 8:
+        wn = new_doc[0].rect.width
+        fit = _fit_axis(anchors, thr=0.035 * wn)
+        if fit and fit[2] >= 6 and fit[2] >= 0.4 * len(anchors):
+            a, b, _n = fit
+            shift = sorted(abs(a * u + b - u) for u, _ in anchors)[len(anchors) // 2]
+            if shift > 0.02 * wn:                      # a real margin / layout shift, not just reflow
+                model_x = (a, b)
+    changed = 0
+    by_idx = {r["index"]: r for r in results["annotations"]}
+    for info in all_annots:
+        if info.page_num >= len(new_doc) or info.annot_type[0] != ANNOT_FREETEXT:
+            continue
+        weak = (not info.matched) or info.match_confidence < LAYOUT_CONF
+        if not weak or info.status == "absent":
+            continue
+        if info.new_page_num is not None and info.new_page_num != info.page_num and info.matched:
+            continue                                   # a different-page match: not ours to second-guess
+        sx, sy, npg = scale(info)
+        tx, ty = _tip_of(info)
+        px = (model_x[0] * tx * sx + model_x[1]) if model_x else tx * sx
+        py = ty * sy
+        if not model_x and abs(sx - 1) < 0.005 and abs(sy - 1) < 0.005:
+            continue                                   # same page size, no shift found: leave the matcher's answer
+        px = max(0.0, min(px, npg.width)); py = max(0.0, min(py, npg.height))
+        cur = info.new_vertices[0] if info.new_vertices else (_tip_of(info) if not info.matched else None)
+        dx, dy = px - tx, py - ty
+        info.new_rect = apply_offset(info.rect, fitz.Point(dx, dy))
+        info.new_vertices = [(v[0] + dx, v[1] + dy) for v in info.vertices]
+        info.new_page_num = info.page_num
+        info.match_method = "layout" if model_x else "position"
+        info.match_note = ("Placed using the layout shift found between the two versions"
+                           if model_x else "Placed by scaling its original position to the new page size")
+        r = by_idx.get(info.index)
+        if r:
+            r["method"] = info.match_method; r["note"] = info.match_note
+        changed += 1
+    results["layout_shift"] = {"applied": bool(model_x), "pins": changed, "anchors": len(anchors),
+                               "a": round(model_x[0], 3) if model_x else None, "b": round(model_x[1], 1) if model_x else None}
+    return changed
+
+
 def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str, progress=None) -> dict:
     old_doc = fitz.open(old_pdf_path)
     new_doc = fitz.open(new_pdf_path)
@@ -1291,6 +1396,10 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str, progres
             "parent_index": info.parent_index,
         })
 
+    try:
+        apply_layout_shift(all_annots, old_doc, new_doc, results)
+    except Exception:
+        pass                                           # never let the correction break a run
     _mark_removed_pages(all_annots, results, len(old_doc), len(new_doc))
 
     results = _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, progress)

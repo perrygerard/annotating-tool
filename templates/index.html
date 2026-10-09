@@ -135,7 +135,7 @@
 
     /* Pins on the updated page */
     .ann-mark { pointer-events: all; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
-    .ann-mark.dragging { cursor: grabbing; }
+    .ann-mark.dragging, .ann-mark.dragging * { cursor: grabbing !important; }
     /* Pins share the status-chip palette: chip fill, chip outline, chip text colour */
     .ann-mark { --pin-fill: var(--success-bg); --pin-line: var(--success-border); --pin-ink: var(--success); }
     .ann-mark.needs_look      { --pin-fill: var(--warn-bg);    --pin-line: var(--warn-border);    --pin-ink: var(--warn); }
@@ -156,6 +156,11 @@
     .ann-mark .pin-stem { stroke: var(--pin-ink); stroke-width: 2px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
     .ann-mark .pin-dot { fill: var(--pin-ink); }
     .ann-mark .pin-hit { fill: transparent; stroke: none; cursor: crosshair; }
+    .ann-mark .pin-stem-hit { stroke: transparent; stroke-width: 12px; vector-effect: non-scaling-stroke; stroke-linecap: round; cursor: grab; }
+    .ann-mark .pin-aim { fill: none; stroke: var(--pin-ink); stroke-width: 1.5px; vector-effect: non-scaling-stroke; opacity: 0; pointer-events: none; transition: opacity .12s; }
+    .ann-mark:hover .pin-aim, .ann-mark.dragging .pin-aim { opacity: .55; }
+    .ann-mark:has(.pin-hit:hover) .pin-aim { opacity: 1; stroke-width: 2.5px; }
+    .ann-mark:hover .pin-body { stroke-width: 3px; }
     .ann-mark { filter: drop-shadow(0 1px 1.5px rgb(15 23 42 / .35)); }
     .ann-mark text { fill: var(--pin-ink); font-weight: 700; font-family: var(--body); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
     .ann-mark:hover .pin-body { filter: brightness(0.97); }
@@ -399,6 +404,7 @@
     .cl-right .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
     .show-orig { display: none !important; }
     .toolbar { flex: none; display: flex; align-items: center; gap: 10px; min-height: 52px; box-sizing: border-box; padding: 0 28px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+    .tb-hint { margin-left: auto; font-size: .74rem; color: #64748b; white-space: nowrap; }
     .tb-group { display: flex; align-items: center; gap: 10px; }
     .tb-sep { width: 1px; height: 22px; background: #e2e8f0; }
     .toolbar .cl-btn { font-size: 0.8rem; font-weight: 600; color: #334155; border-radius: 5px; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); }
@@ -574,6 +580,7 @@
         <svg class="box-ico" width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><rect x="1.25" y="1.25" width="15.5" height="11.5" rx="2.5"/></svg>Box</button>
     </div>
     <span class="tb-sep" aria-hidden="true"></span>
+    <span class="tb-hint" aria-hidden="true">Drag a pin to move it · drag its small dot to aim</span>
     <div class="tb-group">
       <button type="button" class="cl-btn" data-act="undo" id="undo-btn" disabled title="Undo (Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
       <button type="button" class="cl-btn" data-act="redo" id="redo-btn" disabled title="Redo (Shift+Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>Redo</button>
@@ -1074,20 +1081,22 @@
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.setAttribute('class', 'ann-mark ' + (ann.status || 'moved'));
       const mk = (tag, cls) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); if (cls) e.setAttribute('class', cls); return e; };
-      const stem = mk('line', 'pin-stem'), body = mk('circle', 'pin-body'), dot = mk('circle', 'pin-dot'), hit = mk('circle', 'pin-hit');
+      const stem = mk('line', 'pin-stem'), stemHit = mk('line', 'pin-stem-hit'), body = mk('circle', 'pin-body'), dot = mk('circle', 'pin-dot'), aimRing = mk('circle', 'pin-aim'), hit = mk('circle', 'pin-hit');
+      const hitTitle = mk('title'); hitTitle.textContent = 'Drag this dot to aim: the number stays where it is';
+      hit.appendChild(hitTitle);
       const t = mk('text');
       let lbl = (ann.number == null ? '–' : String(ann.number)) + (ann.sub_label || '');
       const fs = () => r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8);
       t.setAttribute('font-size', fs());
       t.textContent = lbl;
       const tt = mk('title');
-      const title = () => `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag the number to place it, drag the dot to aim, double-click or R to turn`;
+      const title = () => `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''}: drag to move the whole pin, or drag the small dot to aim`;
       tt.textContent = title();
       g._setLabel = () => {
         lbl = (ann.number == null ? '–' : String(ann.number)) + (ann.sub_label || '');
         t.textContent = lbl; t.setAttribute('font-size', fs()); tt.textContent = title();
       };
-      [tt, stem, dot, body, t, hit].forEach(e => g.appendChild(e));
+      [tt, stemHit, stem, aimRing, dot, body, t, hit].forEach(e => g.appendChild(e));
       svg.appendChild(g);
 
       const maxX = vbW * contentFrac;
@@ -1107,6 +1116,8 @@
         const cx = Math.max(r, Math.min(px + ox * r, maxX - r));
         const cy = Math.max(r, Math.min(py + oy * r, vbH - r));
         stem.setAttribute('x1', px); stem.setAttribute('y1', py); stem.setAttribute('x2', cx); stem.setAttribute('y2', cy);
+        stemHit.setAttribute('x1', px); stemHit.setAttribute('y1', py); stemHit.setAttribute('x2', cx); stemHit.setAttribute('y2', cy);
+        aimRing.setAttribute('cx', px); aimRing.setAttribute('cy', py); aimRing.setAttribute('r', r * 0.62);
         dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.setAttribute('r', r * TIP_R);
         body.setAttribute('cx', cx); body.setAttribute('cy', cy); body.setAttribute('r', r);
         hit.setAttribute('cx', px); hit.setAttribute('cy', py); hit.setAttribute('r', r * 0.8);
@@ -1121,7 +1132,7 @@
       g._setPos(g._orig.px, g._orig.py);
 
       // ── Drag the pin; its point is what gets saved ─────────────────
-      let dragging = false, moved = false, sx = 0, sy = 0, p0 = null, start = null, mode = 'point', offStart = null;
+      let dragging = false, moved = false, sx = 0, sy = 0, p0 = null, start = null, mode = 'whole', offStart = null, ringC = null;
       const toSvg = ev => {
         const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
         return pt.matrixTransform(svg.getScreenCTM().inverse());
@@ -1131,8 +1142,8 @@
         dragging = true; moved = false; sx = ev.clientX; sy = ev.clientY;
         p0 = toSvg(ev); start = { x: g._px, y: g._py }; offStart = (g._shown || g._off).slice();
         // the dot aims the pin; the number places it round the dot; Shift on the number moves the whole pin
-        mode = ev.target === hit || ev.target === dot ? 'point' : (ev.shiftKey ? 'whole' : 'ring');
-        if (mode === 'ring') { g._free = true; g._off = offStart.slice(); }
+        mode = ev.target === hit || ev.target === dot ? 'aim' : 'whole';
+        if (mode === 'aim') { g._free = true; g._off = offStart.slice(); ringC = { x: start.x + offStart[0] * r, y: start.y + offStart[1] * r }; }
         try { g.setPointerCapture(ev.pointerId); } catch (e) {}
         ev.preventDefault();
       });
@@ -1141,10 +1152,13 @@
         if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
         moved = true; g.classList.add('dragging');
         const p = toSvg(ev);
-        if (mode === 'ring') {
-          let kx = offStart[0] + (p.x - p0.x) / r, ky = offStart[1] + (p.y - p0.y) / r;
-          const len = Math.hypot(kx, ky) || 1, L = Math.max(1.8, Math.min(len, 6));       // stays attached: 1.8 to 6 ring radii from the dot
-          g._setOff(kx / len * L, ky / len * L);
+        if (mode === 'aim') {
+          // the number stays put; the dot moves and the stem stretches to it (1.2 to 14 ring radii long)
+          let ax = Math.max(0, Math.min(start.x + (p.x - p0.x), maxX)), ay = Math.max(0, Math.min(start.y + (p.y - p0.y), vbH));
+          let vx = (ringC.x - ax) / r, vy = (ringC.y - ay) / r;
+          const len = Math.hypot(vx, vy) || 1, L = Math.max(1.2, Math.min(len, 14));
+          if (len < 1.2 || len > 14) { vx = vx / len * L; vy = vy / len * L; ax = ringC.x - vx * r; ay = ringC.y - vy * r; }
+          g._off = [vx, vy]; g._setPos(ax, ay);
           return;
         }
         let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
@@ -1155,13 +1169,12 @@
         if (!dragging) return;
         dragging = false; g.classList.remove('dragging'); g._free = false;
         try { g.releasePointerCapture(ev.pointerId); } catch (e) {}
-        if (!moved && mode === 'ring') g._off = offStart.slice();
-        if (moved && mode === 'ring') onRingMoved(ann.index, g._off, offStart);
+        if (!moved && mode === 'aim') g._off = offStart.slice();
+        if (moved && mode === 'aim') { g._off = (g._shown || g._off).slice(); onPinAimed(ann.index, g._px / vbW, g._py / vbH, offStart); }
         else if (moved) onMarkerMoved(ann.index, g._px / vbW, g._py / vbH);
       };
       g.addEventListener('pointerup', end);
       g.addEventListener('pointercancel', end);
-      g.addEventListener('dblclick', ev => { ev.preventDefault(); const i = registryIdxByAnn(ann.index); if (i >= 0) onMarkerFlipped(i, ev.shiftKey ? -1 : 1); });
       return g;
     }
 
@@ -1532,7 +1545,7 @@
   }
 
   function methodLabelFor(m) {
-    return m === 'visual' ? '🖼 Visual match' : m === 'position' ? '📌 Position kept' : '🔤 Text match';
+    return m === 'visual' ? '🖼 Visual match' : m === 'layout' ? '📐 Placed by layout shift' : m === 'position' ? '📌 Position kept' : '🔤 Text match';
   }
 
   // A callout may point at 2+ places: the primary entry plus its second-target pins
@@ -1614,10 +1627,8 @@
             <span class="loc-name">Second location <b>${esc(a.number)}${esc(m.e.ann.sub_label)}</b> · page ${esc(m.e.pg.new_page_num || m.e.pg.page_num)}</span>
             <span class="badge loc-status"></span>
           </div>
-          <div class="dc-note">${esc(m.e.ann.note)}</div>
           <div class="loc-actions">
             <button type="button" class="act-btn secondary loc-show">Show</button>
-            <button type="button" class="act-btn secondary loc-flip" title="Turn the pin a quarter (R)">↻ Turn pin</button>
             <button type="button" class="act-btn secondary loc-reset" hidden>Reset pin</button>
           </div>
         </div>`).join('');
@@ -1631,15 +1642,9 @@
       <div class="ann-body" id="${bodyId}" hidden>
         <div class="dc-edit-label"><span>Reference</span><span class="dc-edit-hint">Click to edit</span></div>
         <textarea class="dc-edit" rows="1" aria-label="Reference text" placeholder="Type the reference for this spot…">${esc(a.content)}</textarea>
-        <div class="dc-row"><span>Page</span><span>${esc(entry.pg.page_num)}</span></div>
-        <div class="dc-row"><span>Author</span><span>${esc(a.author || '—')}</span></div>
-        <div class="dc-row"><span>Confidence</span><span>${esc(a.confidence)}</span></div>
-        <div class="dc-row"><span>Match</span><span>${esc(methodLabelFor(a.method))}</span></div>
-        <div class="dc-note">${esc(a.note)}</div>
-        ${locRows}
         <div class="swatches" role="group" aria-label="Pin color in the export"><span class="sw-lbl">Export color</span>${PIN_COLORS.map(c => `<button type="button" class="sw" data-c="${c[0]}" style="--c:${c[0]}" title="${c[1]}" aria-label="${c[1]}" aria-pressed="false"></button>`).join('')}</div>
+        ${locRows}
         <div class="ann-actions">
-          <button type="button" class="act-btn secondary act-flip" title="Turn the pin a quarter (R, Shift+R the other way)">↻ Turn pin</button>
           <button type="button" class="act-btn secondary act-reset" hidden>Reset pin</button>
           <button type="button" class="act-btn act-remove">Remove</button>
         </div>
@@ -1654,11 +1659,9 @@
     item.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => setPinColor(idx, b.dataset.c)));
     item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
     item.querySelector('.act-reset').addEventListener('click', () => resetPosition(idx));
-    item.querySelector('.act-flip').addEventListener('click', () => onMarkerFlipped(idx));
     item.querySelectorAll('.loc-row').forEach(row => {
       const ci = Number(row.dataset.loc);
       row.querySelector('.loc-show').addEventListener('click', () => selectAnnotation(ci));
-      row.querySelector('.loc-flip').addEventListener('click', () => onMarkerFlipped(ci));
       row.querySelector('.loc-reset').addEventListener('click', () => resetPosition(ci));
     });
     refreshItem(item, entry);
@@ -1697,12 +1700,9 @@
       b.className = 'badge loc-status ' + st;
       b.textContent = st === 'deleted' ? 'Removed' : st === 'reviewed' ? '✓ Adjusted' : (STATUS_LABELS[st] || st);
       row.querySelector('.loc-reset').hidden = !(dotOverrides.has(k) || sideOverrides.has(k)) || removed;
-      row.querySelector('.loc-flip').style.display = removed ? 'none' : '';
     });
     item.querySelector('.act-reset').hidden = !(dotOverrides.has(a.index) || sideOverrides.has(a.index)) || removed;
-    item.querySelector('.act-flip').style.display = removed ? 'none' : '';
     const pinsN = group.filter(m => m.e.ann.type !== 'Square').length, hasBox = group.some(m => m.e.ann.type === 'Square');
-    item.querySelector('.act-flip').textContent = pinsN > 1 ? `↻ Turn pin ${a.number}` : '↻ Turn pin';
     const rm = item.querySelector('.act-remove');
     rm.textContent = removed ? (a.method === 'absent' ? 'Place it anyway' : 'Restore') : (pinsN > 1 ? 'Remove both' : hasBox ? 'Remove pin & box' : 'Remove');
     rm.classList.toggle('secondary', removed);
@@ -2010,6 +2010,18 @@
     }
     sideOverrides.set(k, [+o[0].toFixed(3), +o[1].toFixed(3)]);
   }
+  // Aiming moves the dot and re-seats the ring offset in one undo step
+  function onPinAimed(annIndex, xf, yf, offBefore) {
+    const idx = registryIdxByAnn(annIndex), e = (window._annRegistry || [])[idx];
+    if (!e) return;
+    const before = _pinState(e); if (offBefore) before.off = offBefore.slice();
+    _onMarkerMoved(annIndex, xf, yf);
+    _storeRing(e, e.newRectEl);
+    refreshGroup(idx);
+    const after = _pinState(e);
+    hrec(() => _pinRestore(idx, before), () => _pinRestore(idx, after));
+    updateConfirmButton();
+  }
   function onRingMoved(annIndex, off, offBefore) {
     const idx = registryIdxByAnn(annIndex), entry = (window._annRegistry || [])[idx];
     if (!entry || !entry.newRectEl) return;
@@ -2017,33 +2029,6 @@
     if (!reviewedIndices.has(annIndex)) { reviewedIndices.add(annIndex); entry.autoReviewed = true; }
     renumber(); refreshGroup(idx); updateConfirmButton();
   }
-
-  // Turn a pin a quarter at a time (step +1 clockwise, -1 back): the ring swings round the point, keeping its distance
-  function onMarkerFlipped(idx, step = 1) {
-    const entry = (window._annRegistry || [])[idx];
-    if (!entry || !entry.newRectEl || !entry.newRectEl._setDir) return;
-    const g = entry.newRectEl, k = entry.ann.index;
-    const [ox, oy] = g._off;
-    g._setOff(step >= 0 ? -oy : oy, step >= 0 ? ox : -ox);       // 90 degrees about the point
-    _storeRing(entry, g);
-    if (sideOverrides.has(k) && !reviewedIndices.has(k)) { reviewedIndices.add(k); entry.autoReviewed = true; }
-    refreshGroup(idx);
-    updateConfirmButton();
-  }
-  // R turns the selected pin (Shift+R the other way)
-  document.addEventListener('keydown', ev => {
-    if ((ev.key !== 'r' && ev.key !== 'R') || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    const tag = (ev.target && ev.target.tagName) || '';
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || (ev.target && ev.target.isContentEditable)) return;
-    const reg = window._annRegistry || [];
-    const i = activeEntry ? reg.indexOf(activeEntry) : -1;
-    if (i < 0) return;
-    // the selected reference: turn its first pin (or the pin that was clicked)
-    const pin = reg[i].newRectEl && reg[i].newRectEl._setDir ? i : groupOf(i).map(m => m.i).find(j => reg[j].newRectEl && reg[j].newRectEl._setDir);
-    if (pin === undefined || pin < 0) return;
-    ev.preventDefault();
-    onMarkerFlipped(pin, ev.shiftKey ? -1 : 1);
-  });
 
   function resetPosition(idx) {
     const entry = (window._annRegistry || [])[idx];
@@ -2175,6 +2160,7 @@
     return { schema: 1, exported_at: new Date().toISOString(), tool: 'Carryover',
       mode_used: r.mode_used || (mode === 'add' ? 'place' : null), mode_auto: !!r.mode_auto, mode_reason: r.mode_reason || '', mode_override: window._override || null,
       pin_colors: colorPayload(),
+      layout_shift: r.layout_shift || null,
       boxes_in_original: carriedBoxes().filter(e => e.ann.placed !== false).length, boxes_included: boxesIncluded, boxes_added: (window._annRegistry || []).filter(e => e.ann.isNew && e.ann.type === 'Square' && !deletedIndices.has(e.ann.index)).length,
       auto_counts: { total: r.total, moved: r.moved, needs_look: r.needs_look, content_removed: r.content_removed },
       processing_seconds: (window._resultsAt && window._jobStart) ? Math.round((window._resultsAt - window._jobStart) / 1000) : null,
@@ -2362,16 +2348,6 @@
     _onRingMoved(annIndex, off, offBefore);
     if (!e) return;
     const after = _pinState(e);
-    hrec(() => _pinRestore(idx, before), () => _pinRestore(idx, after));
-  };
-  const _onMarkerFlipped = onMarkerFlipped;
-  onMarkerFlipped = function (idx, step) {
-    const e = (window._annRegistry || [])[idx];
-    const before = e ? _pinState(e) : null;
-    _onMarkerFlipped(idx, step);
-    if (!e || !before) return;
-    const after = _pinState(e);
-    if (after.dir === before.dir && JSON.stringify(after.off) === JSON.stringify(before.off)) return;
     hrec(() => _pinRestore(idx, before), () => _pinRestore(idx, after));
   };
   const _resetPosition = resetPosition;
