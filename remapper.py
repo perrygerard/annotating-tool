@@ -1679,10 +1679,10 @@ def _pin_bbox(cx, cy, px, py, r):
                      max(cx + r, px + rd) + pad, max(cy + r, py + rd) + pad)
 
 
-def _draw_pin(page, cx, cy, px, py, number, radius):
+def _draw_pin(page, cx, cy, px, py, number, radius, color=None):
     """Number in a red ring on a short stem ending in a dot; the dot is the point, the ring sits at (cx,cy).
     Same red as the review boxes, white number."""
-    red = BOX_RED
+    red = color or BOX_RED
     sw = max(0.8, radius * 0.17)
     page.draw_line(fitz.Point(px, py), fitz.Point(cx, cy), color=red, width=sw)
     page.draw_circle(fitz.Point(px, py), radius * TIP_R, color=None, fill=red)
@@ -1760,9 +1760,10 @@ def _wrap_text_measured(text, max_w, fontsize):
     return lines
 
 
-def _draw_number_dot(page, cx, cy, number, radius=7):
-    """Filled black circle with centered white number at (cx, cy)."""
-    page.draw_circle(fitz.Point(cx, cy), radius, color=(0, 0, 0), fill=(0, 0, 0))
+def _draw_number_dot(page, cx, cy, number, radius=7, color=None):
+    """Filled circle (black unless a colour is given) with centered white number at (cx, cy)."""
+    c = color or (0, 0, 0)
+    page.draw_circle(fitz.Point(cx, cy), radius, color=c, fill=c)
     label = str(number)
     fontsize = radius * {1: 1.1, 2: 0.85}.get(len(label), 0.65)
     tw = fitz.get_text_length(label, fontname="helv", fontsize=fontsize)
@@ -1912,7 +1913,7 @@ def _spread_entries(want, hts, gap, lo, hi):
 
 
 def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
-              overrides=None, draw_dots=True, sides=None, boxes=None, progress=None, tracking=None):
+              overrides=None, draw_dots=True, sides=None, boxes=None, progress=None, tracking=None, colors=None):
     """Write annotations to a new PDF with a numbered reference sidebar.
 
     Each page is expanded rightward by SIDEBAR_W points. Annotations get:
@@ -1925,6 +1926,13 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
     # the full output page (original page + sidebar) width and of page height.
     overrides = overrides or {}
     sides = sides or {}          # {annot.index: +1|-1} manual body side (else automatic)
+    colors = colors or {}        # {annot.index: (r,g,b) 0..1} pin colour chosen in the review (default red)
+
+    def _pin_color(info):
+        c = colors.get(info.index)
+        if c is None and info.parent_index is not None:
+            c = colors.get(info.parent_index)       # a second location shares its callout's colour
+        return c
 
     SIDEBAR_BG = (0.97, 0.97, 0.97)   # near-white background
     DIVIDER_COLOR = (0.8, 0.8, 0.8)   # light grey divider
@@ -1937,8 +1945,8 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
               if info.index not in skip_indices and info.new_rect is not None]
 
     # Only text (FreeText) annotations get a number/dot/sidebar entry.
-    # Numbers are assigned over ALL annotations so they stay stable when the
-    # user removes some (gaps are fine; references never shift).
+    # Numbers run 1..N over the pins that are actually in the export (removed / not-found ones carry none),
+    # in reading order: the review screen renumbers the same way.
     pos_pts = {}
     for idx, (fx, fy) in overrides.items():
         inf = next((i for i in all_annots if i.index == idx), None)
@@ -1946,7 +1954,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             continue
         pg = out_doc[_out_page(inf)].rect
         pos_pts[idx] = (fx * (pg.width + SIDEBAR_BASE * _scale(pg.width)), fy * pg.height)
-    num_by_index = assign_numbers(all_annots, pos_pts)
+    num_by_index = assign_numbers(active, pos_pts)
     numbered = [info for info in active
                 if info.annot_type[0] == ANNOT_FREETEXT and info.index in num_by_index]
     numbered.sort(key=lambda a: num_by_index[a.index])
@@ -2049,7 +2057,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             num = global_num[(_out_page(info), info.index)]
             dot_x = pw + SIDEBAR_PAD + DOT_R
             dot_y = cursor_y + DOT_R
-            _draw_number_dot(page, dot_x, dot_y, num, radius=DOT_R)
+            _draw_number_dot(page, dot_x, dot_y, num, radius=DOT_R, color=_pin_color(info))
 
             text_y = cursor_y + font
             for line in lns:
@@ -2083,7 +2091,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             cx, cy = _pin_body_center(px, py, PIN_R, side)
             cx = max(PIN_R + 1, min(cx, pw - PIN_R - 1))
             cy = max(PIN_R + 1, min(cy, ph - PIN_R - 1))
-            _draw_pin(page, cx, cy, px, py, num, PIN_R)
+            _draw_pin(page, cx, cy, px, py, num, PIN_R, _pin_color(info))
             if draw_dots:
                 _add_carrier(page, info, cx, cy, px, py, PIN_R, pins_on_page, global_num, _out_page(info))
 

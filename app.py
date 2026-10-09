@@ -374,10 +374,12 @@ def _effective_annots(all_annots, pdf_path, edits, new_boxes, overrides):
         for nb in new_boxes:
             try:
                 pn = int(nb["page"]) - 1
-                bi, pi = int(nb["index"]), int(nb["pin_index"])
+                bi = int(nb["index"])
+                has_pin = nb.get("pin") is not None and nb.get("pin_index") is not None   # a box drawn on its own has no pin
+                pi = int(nb["pin_index"]) if has_pin else None
                 has_box = nb.get("box") is not None            # a pin added on its own has no box
                 fx, fy, fw, fh = [float(v) for v in nb["box"]] if has_box else (0.0, 0.0, 0.0, 0.0)
-                px, py = [float(v) for v in nb["pin"]]
+                px, py = [float(v) for v in nb["pin"]] if has_pin else (0.0, 0.0)
                 page = doc[pn]
             except (KeyError, ValueError, TypeError, IndexError):
                 continue
@@ -387,6 +389,13 @@ def _effective_annots(all_annots, pdf_path, edits, new_boxes, overrides):
             box = fitz.Rect(fx * tot_w, fy * ph, min(pw, (fx + fw) * tot_w), min(ph, (fy + fh) * ph + 0))
             tx, ty = px * tot_w, py * ph
             content = str(nb.get("content") or "")[:5000]
+            if not has_pin:
+                if has_box:
+                    sq0 = AnnotationInfo(index=bi, page_num=pn, annot_type=(ANNOT_SQUARE, "Square"), rect=fitz.Rect(box),
+                                         content="", vertices=[], flags=0, colors={}, border={})
+                    sq0.new_rect = fitz.Rect(box); sq0.new_page_num = pn; sq0.status = "moved"; sq0.matched = True
+                    eff.append(sq0)
+                continue
             sq = AnnotationInfo(index=bi, page_num=pn, annot_type=(ANNOT_SQUARE, "Square"), rect=fitz.Rect(box),
                                 content="", vertices=[], flags=0, colors={}, border={})
             sq.new_rect = fitz.Rect(box); sq.new_page_num = pn; sq.status = "moved"; sq.matched = True
@@ -430,6 +439,9 @@ def tighten_box(job_id):
                         "changed": bool(changed)})
     except Exception as e:
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+
+PIN_PALETTE = {"#c83333", "#c2610c", "#15803d", "#1d4ed8", "#7e22ce", "#1f2937"}
 
 
 @app.route("/confirm/<job_id>", methods=["POST"])
@@ -487,6 +499,12 @@ def confirm(job_id):
         if str(k).lstrip("-").isdigit() and isinstance(v, str):
             edits[int(k)] = v[:5000]
     new_boxes = data.get("new_boxes") or []
+    # Pin colours: { "<annotation index>": "#rrggbb" } (only the preset palette is accepted)
+    colors = {}
+    for k, v in (data.get("colors") or {}).items():
+        if str(k).lstrip("-").isdigit() and isinstance(v, str) and v.lower() in PIN_PALETTE:
+            h = v.lower().lstrip("#")
+            colors[int(k)] = tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
 
     if not all_annots or not new_pdf_path or not output_path:
         return jsonify({"error": "Job data missing — please re-process"}), 500
@@ -502,7 +520,7 @@ def confirm(job_id):
             import json as _json
             tracking_bytes = _json.dumps(tracking, separators=(",", ":")).encode("utf-8")[:2_000_000]
         write_pdf(eff, new_pdf_path, output_path, skip_indices=deleted, overrides=overrides, sides=sides, boxes=boxes,
-                  tracking=tracking_bytes)
+                  tracking=tracking_bytes, colors=colors)
         _free_pdf_cache()
         # Update the results annotation list to reflect deletions
         results = job["results"]

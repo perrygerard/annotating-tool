@@ -140,6 +140,17 @@
     .ann-mark { --pin-fill: var(--success-bg); --pin-line: var(--success-border); --pin-ink: var(--success); }
     .ann-mark.needs_look      { --pin-fill: var(--warn-bg);    --pin-line: var(--warn-border);    --pin-ink: var(--warn); }
     .ann-mark.content_removed { --pin-fill: var(--removed-bg); --pin-line: var(--removed-border); --pin-ink: var(--removed); }
+    .ann-mark.exp .pin-body { fill: var(--xc); stroke: var(--xc); }
+    .ann-mark.exp .pin-stem { stroke: var(--xc); }
+    .ann-mark.exp .pin-dot { fill: var(--xc); }
+    .ann-mark.exp text { fill: #fff; }
+    .swatches { display: flex; align-items: center; gap: 5px; margin: 10px 0 2px; flex-wrap: wrap; }
+    .swatches .sw-lbl { font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-right: 0; white-space: nowrap; }
+    .swatches .sw { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; background: var(--c); box-shadow: 0 0 0 1px #cbd5e1; cursor: pointer; padding: 0; }
+    .swatches .sw:hover { box-shadow: 0 0 0 1px #64748b; }
+    .swatches .sw[aria-pressed="true"] { box-shadow: 0 0 0 2.5px #0f172a; }
+    .swatches .sw:focus-visible { outline: 2px solid #4449F2; outline-offset: 2px; }
+    .conf-switch { display: flex; align-items: center; gap: 7px; cursor: pointer; }
     .ann-mark.deleted         { --pin-fill: #f1f5f9; --pin-line: #cbd5e1; --pin-ink: var(--ink-light); }
     .ann-mark .pin-body { fill: var(--pin-fill); stroke: var(--pin-ink); stroke-width: 2px; vector-effect: non-scaling-stroke; transition: fill 0.12s; }
     .ann-mark .pin-stem { stroke: var(--pin-ink); stroke-width: 2px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
@@ -640,6 +651,8 @@
         <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">claims located</span></div>
         <div class="conf-bar"><i id="conf-bar-fill"></i></div>
         <div class="conf-sub" id="conf-sub"></div>
+        <div class="conf-mode" id="conf-colors" hidden><label class="conf-switch"><input type="checkbox" id="conf-colors-cb"> Show export pin colors</label></div>
+        <div class="conf-mode" id="conf-boxes" hidden><span id="conf-boxes-text"></span> <button type="button" class="conf-link" id="conf-boxes-btn"></button></div>
         <div class="conf-mode" id="conf-mode" hidden><span id="conf-mode-text"></span> <button type="button" class="conf-link" id="conf-rerun"></button></div>
       </div>
       <div class="detail-header filter-title" id="filter-title">Filter</div>
@@ -682,6 +695,8 @@
   const PIN_DIRS_G = [[1, 0], [0, 1], [-1, 0], [0, -1]], PIN_L_G = 2.0;   // same as inside buildPin
   const sideOverrides = new Map(); // annotation .index -> quarter turn 0..3 (0 ring right, 1 below, 2 left, 3 above) or a dragged ring offset [kx, ky] in ring radii; only when it differs from the default
   const boxEdits = new Map();      // box .index -> [x, y, w, h] fractions of the output page (boxes the user moved / resized)
+  const offBoxes = new Set();            // boxes from the original that are left out of this carryover (default)
+  let boxesIncluded = false;
   const contentEdits = new Map();  // annotation .index -> edited reference text
   let drawMode = false, pinMode = false, newBoxSeq = 0;
 
@@ -999,7 +1014,7 @@
     reviewedIndices = new Set();
     dotOverrides.clear();
     sideOverrides.clear();
-    boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0;
+    boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0; offBoxes.clear(); boxesIncluded = false;
     if (drawMode) setDrawMode(false);
     if (pinMode) setPinMode(false);
     histReset();
@@ -1061,7 +1076,7 @@
       const mk = (tag, cls) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); if (cls) e.setAttribute('class', cls); return e; };
       const stem = mk('line', 'pin-stem'), body = mk('circle', 'pin-body'), dot = mk('circle', 'pin-dot'), hit = mk('circle', 'pin-hit');
       const t = mk('text');
-      let lbl = String(ann.number) + (ann.sub_label || '');
+      let lbl = (ann.number == null ? '–' : String(ann.number)) + (ann.sub_label || '');
       const fs = () => r * ({1: 1.3, 2: 1.05}[lbl.length] || 0.8);
       t.setAttribute('font-size', fs());
       t.textContent = lbl;
@@ -1069,7 +1084,7 @@
       const title = () => `Reference ${lbl}${ann.sub_label ? ' (second location)' : ''} — drag the number to place it, drag the dot to aim, double-click or R to turn`;
       tt.textContent = title();
       g._setLabel = () => {
-        lbl = String(ann.number) + (ann.sub_label || '');
+        lbl = (ann.number == null ? '–' : String(ann.number)) + (ann.sub_label || '');
         t.textContent = lbl; t.setAttribute('font-size', fs()); tt.textContent = title();
       };
       [tt, stem, dot, body, t, hit].forEach(e => g.appendChild(e));
@@ -1443,9 +1458,14 @@
     showModeNote(results);
     activeFilter = 'all';
     // Claims that were not found in the new piece start out removed (kept in the list, left out of the export)
+    window._initNumbers = true;
     annRegistry.forEach((entry, idx) => {
       if (entry.ann.method === 'absent' && entry.ann.parent_index == null) toggleDelete(idx, entry.ann.index);
     });
+    window._initNumbers = false;
+    renumber(true);
+    initBoxes();
+    pinColors.clear(); showExport = false; document.getElementById('conf-colors').hidden = false; applyPinColors();
     histReset();
     updateFilters();
 
@@ -1603,7 +1623,7 @@
         </div>`).join('');
     item.innerHTML = `
       <button type="button" class="ann-head" aria-expanded="false" aria-controls="${bodyId}">
-        <span class="num-dot${String(a.number).length > 2 ? ' n3' : ''}">${esc(a.number)}</span>
+        <span class="num-dot${String(a.number).length > 2 ? ' n3' : ''}">${esc(a.number == null ? '–' : a.number)}</span>
         ${extra.length ? `<span class="loc-chip">${extra.length + 1} places</span>` : ''}
         <span class="badge ann-status"></span>
         <svg class="ann-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg>
@@ -1617,6 +1637,7 @@
         <div class="dc-row"><span>Match</span><span>${esc(methodLabelFor(a.method))}</span></div>
         <div class="dc-note">${esc(a.note)}</div>
         ${locRows}
+        <div class="swatches" role="group" aria-label="Pin color in the export"><span class="sw-lbl">Export color</span>${PIN_COLORS.map(c => `<button type="button" class="sw" data-c="${c[0]}" style="--c:${c[0]}" title="${c[1]}" aria-label="${c[1]}" aria-pressed="false"></button>`).join('')}</div>
         <div class="ann-actions">
           <button type="button" class="act-btn secondary act-flip" title="Turn the pin a quarter (R, Shift+R the other way)">↻ Turn pin</button>
           <button type="button" class="act-btn secondary act-reset" hidden>Reset pin</button>
@@ -1630,6 +1651,7 @@
       if (!a.isNew) { if (ta.value === origText) contentEdits.delete(a.index); else contentEdits.set(a.index, ta.value); updateConfirmButton(); }
     });
     item.querySelector('.ann-head').addEventListener('click', () => toggleItem(idx));
+    item.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => setPinColor(idx, b.dataset.c)));
     item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
     item.querySelector('.act-reset').addEventListener('click', () => resetPosition(idx));
     item.querySelector('.act-flip').addEventListener('click', () => onMarkerFlipped(idx));
@@ -1743,41 +1765,118 @@
 
   // Numbers follow placement: reading order of the pins (page, row, left-to-right) — the same
   // rule the export uses (number_key in remapper.py). Runs after every move / reset.
-  function renumber() {
+  // ── Boxes from the original are left out by default; one switch brings them in ──
+  // ── Pin color in the export: six presets per reference (red by default); the review keeps its status colors unless "Show export pin colors" is on ──
+  const PIN_COLORS = [['#c83333', 'Red'], ['#c2610c', 'Orange'], ['#15803d', 'Green'], ['#1d4ed8', 'Blue'], ['#7e22ce', 'Purple'], ['#1f2937', 'Charcoal']];
+  const pinColors = new Map();       // primary annotation .index -> hex (absent = red)
+  let showExport = false;
+  function colorOfEntry(e) {
+    const a = e.ann, k = a.parent_index != null ? a.parent_index : a.index;
+    return pinColors.get(k) || PIN_COLORS[0][0];
+  }
+  function applyPinColors() {
+    (window._annRegistry || []).forEach(e => {
+      const g = e.newRectEl; if (!g || e.ann.type === 'Square' || !g.classList || !g.classList.contains('ann-mark')) return;
+      g.classList.toggle('exp', showExport);
+      if (showExport) g.style.setProperty('--xc', colorOfEntry(e)); else g.style.removeProperty('--xc');
+    });
+    document.querySelectorAll('.ann-item').forEach(item => {
+      const e = (window._annRegistry || [])[Number(item.dataset.idx)]; if (!e) return;
+      const c = colorOfEntry(e);
+      item.querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c === c)));
+    });
+    const cb = document.getElementById('conf-colors-cb'); if (cb) cb.checked = showExport;
+  }
+  function setPinColor(idx, hex) {
+    const p = primaryIdx(idx), e = (window._annRegistry || [])[p]; if (!e) return;
+    const k = e.ann.index, before = pinColors.get(k) || null, wasShown = showExport;
+    const put = h => { if (h === PIN_COLORS[0][0] || !h) pinColors.delete(k); else pinColors.set(k, h); };
+    put(hex); showExport = true; applyPinColors();
+    hrec(() => { put(before); showExport = wasShown; applyPinColors(); updateConfirmButton(); },
+         () => { put(hex); showExport = true; applyPinColors(); updateConfirmButton(); });
+    updateConfirmButton();
+  }
+  document.getElementById('conf-colors-cb').addEventListener('change', ev => { showExport = ev.target.checked; applyPinColors(); });
+  function colorPayload() {
+    const out = {};
+    (window._annRegistry || []).forEach(e => { if (e.ann.type === 'Square') return; const c = colorOfEntry(e); if (c !== PIN_COLORS[0][0]) out[e.ann.index] = c; });
+    return out;
+  }
+  function carriedBoxes() { return (window._annRegistry || []).filter(e => e.ann.type === 'Square' && !e.ann.isNew); }
+  function applyBoxes() {
+    carriedBoxes().forEach(e => {
+      const off = offBoxes.has(e.ann.index);
+      if (e.newRectEl) e.newRectEl.style.display = off ? 'none' : '';
+    });
+    const list = carriedBoxes().filter(e => e.ann.placed !== false);
+    const row = document.getElementById('conf-boxes');
+    if (!list.length) { row.hidden = true; return; }
+    row.hidden = false;
+    const n = list.length;
+    document.getElementById('conf-boxes-text').textContent = boxesIncluded
+      ? `${n} box${n === 1 ? '' : 'es'} from the original carried over.`
+      : `${n} box${n === 1 ? '' : 'es'} from the original not carried over.`;
+    document.getElementById('conf-boxes-btn').textContent = boxesIncluded ? 'Leave them out' : 'Include boxes';
+  }
+  function initBoxes() {
+    offBoxes.clear(); boxesIncluded = false;
+    carriedBoxes().forEach(e => offBoxes.add(e.ann.index));
+    applyBoxes();
+  }
+  function setBoxesIncluded(on) {
+    boxesIncluded = on;
+    carriedBoxes().forEach(e => { if (on) offBoxes.delete(e.ann.index); else offBoxes.add(e.ann.index); });
+    applyBoxes(); updateConfirmButton();
+  }
+  document.getElementById('conf-boxes-btn').addEventListener('click', () => setBoxesIncluded(!boxesIncluded));
+  const allDeleted = () => [...new Set([...deletedIndices, ...offBoxes])];
+
+  function renumber(silent) {
     const reg = window._annRegistry || [];
-    const prim = reg.filter(e => e.ann.number != null && e.ann.parent_index == null && e.ann.num_x != null);
+    // Pins that count: callouts that are placed and not removed. Removed / not-found ones carry no number
+    // until they are placed, so the numbers always run 1..N top to bottom.
+    reg.forEach(e => { if (e.ann._elig === undefined) e.ann._elig = e.ann.number != null && e.ann.parent_index == null && e.ann.num_x != null && e.ann.type !== 'Square'; if (e.ann._orig === undefined) e.ann._orig = e.ann.number; });
+    const prim = reg.filter(e => e.ann._elig);
+    const live = prim.filter(e => !deletedIndices.has(e.ann.index));
+    const dead = prim.filter(e => deletedIndices.has(e.ann.index)).sort((a, b) => (a.ann._orig || 0) - (b.ann._orig || 0));
     const keyOf = e => {
       const p = dotOverrides.get(e.ann.index) || [e.ann.num_x, e.ann.num_y];
       const y = p[1] * e.pg.height, x = p[0] * e.pg.width;
       return [e.pg.new_page_num || e.pg.page_num, Math.floor(y / 20), x];
     };
-    const sorted = prim.map(e => ({ e, k: keyOf(e) })).sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.k[2] - b.k[2]);
-    const newNum = new Map(sorted.map((o, i) => [o.e.ann.index, i + 1]));
+    const sorted = live.map(e => ({ e, k: keyOf(e) })).sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.k[2] - b.k[2]).map(o => o.e);
+    const newNum = new Map(sorted.map((e, i) => [e.ann.index, i + 1]));
     let changed = 0;
     reg.forEach(e => {
       if (e.ann.type === 'Square') return;
       const pk = e.ann.parent_index != null ? e.ann.parent_index : e.ann.index;
-      const n = newNum.get(pk);
-      if (n == null || n === e.ann.number) return;
+      if (!reg.some(r => r.ann.index === pk && r.ann._elig)) return;      // not a numbered kind of annotation
+      const n = newNum.has(pk) ? newNum.get(pk) : null;
+      if (n === e.ann.number) return;
       e.ann.number = n; changed++;
       if (e.newRectEl && e.newRectEl._setLabel) e.newRectEl._setLabel();
     });
-    if (!changed) return;
     const listEl = document.getElementById('ann-list');
-    sorted.forEach(o => {
-      const idx = reg.indexOf(o.e);
+    const order = sorted.concat(dead);
+    const cur = [...listEl.querySelectorAll('.ann-item')].map(i => Number(i.dataset.idx));
+    const want = order.map(e => reg.indexOf(e));
+    const sameOrder = cur.length >= want.length && want.every((v, i) => cur[i] === v);
+    if (!changed && sameOrder) return;
+    order.forEach(o => {
+      const idx = reg.indexOf(o);
       const item = document.querySelector(`.ann-item[data-idx="${idx}"]`);
       if (!item) return;
       const nd = item.querySelector('.num-dot');
-      nd.textContent = o.e.ann.number; nd.classList.toggle('n3', String(o.e.ann.number).length > 2);
+      nd.textContent = o.ann.number == null ? '–' : o.ann.number; nd.classList.toggle('n3', String(o.ann.number).length > 2);
       item.querySelectorAll('.loc-name b').forEach(b => {
         const row = b.closest('.loc-row'); const ci = row && reg[Number(row.dataset.loc)];
-        if (ci) b.textContent = ci.ann.number + (ci.ann.sub_label || '');
+        if (ci) b.textContent = (ci.ann.number == null ? '–' : ci.ann.number) + (ci.ann.sub_label || '');
       });
       listEl.appendChild(item);                 // re-append in order; open/closed state is kept
-      refreshItem(item, o.e);
+      refreshItem(item, o);
     });
-    toast('Pin numbers updated to match placement');
+    if (silent || !changed) return;
+    toast('Pin numbers updated');
     setTimeout(() => { const t = document.getElementById('toast'); if (t && t.textContent.startsWith('Pin numbers')) t.classList.remove('show'); }, 2500);
   }
 
@@ -1844,36 +1943,22 @@
   function addDrawnBox(pg, rc) {
     const reg = window._annRegistry, B = window._builders;
     if (!reg || !B) return;
-    const seq = ++newBoxSeq, boxIdx = 100000 + seq * 2, pinIdx = boxIdx + 1;
+    const seq = ++newBoxSeq, boxIdx = 100000 + seq * 2;
     const vbW = pg.width, vbH = pg.height, cf = pg.content_frac || 1;
     const [fx, fy, fw, fh] = rc;
-    const base = { page: pg.page_num, status: 'moved', author: '', confidence: '100%', method: 'position',
-                   note: 'Box added in the review page.', old_x: 0, old_y: 0, old_w: 0, old_h: 0, isNew: true, sub_label: '', placed: true };
-    const boxAnn = { ...base, index: boxIdx, type: 'Square', content: '', number: null, parent_index: pinIdx,
+    const boxAnn = { page: pg.page_num, status: 'moved', author: '', confidence: '100%', method: 'position',
+                     note: 'Box added in the review page.', old_x: 0, old_y: 0, old_w: 0, old_h: 0, isNew: true, sub_label: '', placed: true,
+                     index: boxIdx, type: 'Square', content: '', number: null, parent_index: null,
                      x: fx, y: fy, w: fw, h: fh, num_x: null, num_y: null, dot_x: null, dot_y: null };
-    const pinAnn = { ...base, index: pinIdx, type: 'FreeText', content: '', number: 99999, parent_index: null,
-                     x: fx + fw, y: fy, w: 0.004, h: 0.004, num_x: fx + fw, num_y: fy, dot_x: fx + fw, dot_y: fy, pin_dir: 0 };
     const boxEl = B.buildBox(pg._newSvg, boxAnn, vbW, vbH, cf);
-    const pinEl = B.buildPin(pg._newSvg, pinAnn, vbW, vbH, cf);
-    pinEl._setZoom(zoomLevel());
     const ghost = svg => { const e = B.svgEl('rect', { 'class': 'ann-mark-hidden', width: 1, height: 1 }); svg.appendChild(e); return e; };
-    const mk = (ann, el) => ({ oldRectEl: ghost(pg._oldSvg), newRectEl: el, oldScrollEl: pg._oldScroll, newScrollEl: pg._newScroll, ann, pg });
-    const pinIdxReg = reg.length;
-    reg.push(mk(pinAnn, pinEl)); reg.push(mk(boxAnn, boxEl));
-    [pinIdxReg, pinIdxReg + 1].forEach(i => { const h = () => selectAnnotation(i); reg[i].newRectEl.addEventListener('click', h); });
-
-    const listEl = document.getElementById('ann-list');
-    document.getElementById('ann-list-header').style.display = '';
-    const item = buildAnnItem(reg[pinIdxReg], pinIdxReg);
-    listEl.appendChild(item);
-    renumber();
-    updateFilters(); updateConfirmButton();
-    selectAnnotation(pinIdxReg);
-    const ta = item.querySelector('.dc-edit');
-    if (ta) setTimeout(() => ta.focus(), 50);
+    const i = reg.length;
+    reg.push({ oldRectEl: ghost(pg._oldSvg), newRectEl: boxEl, oldScrollEl: pg._oldScroll, newScrollEl: pg._newScroll, ann: boxAnn, pg });
+    boxEl.addEventListener('click', () => selectAnnotation(i));
+    updateConfirmButton();
   }
 
-  // A box was moved / resized. Drawn boxes carry their pin to the top-right corner; carried-over boxes are recorded as edits.
+  // A box was moved / resized. Carried-over boxes are recorded as edits; boxes drawn here just move.
   function onBoxChanged(annIndex, fr) {
     const reg = window._annRegistry || [];
     const idx = registryIdxByAnn(annIndex), entry = reg[idx];
@@ -1890,7 +1975,7 @@
         if (!dotOverrides.has(pe.ann.index)) g._setPos(g._orig.px, g._orig.py);     // a hand-placed pin stays where it is
       }
     } else {
-      boxEdits.set(annIndex, fr);
+      if (!a.isNew) boxEdits.set(annIndex, fr);
       const el = entry.newRectEl;
       if (el) { el.classList.remove('needs_look', 'content_removed'); el.classList.add('reviewed'); }
     }
@@ -1995,17 +2080,16 @@
       if (m.e.ann.type === 'Square' && m.e.newRectEl) { m.e.newRectEl.style.display = ''; m.e.newRectEl.classList.toggle('deleted', !restoring); }
     });
     if (!restoring) clearActiveRects();
+    if (!window._initNumbers) renumber();
     refreshGroup(idx);
     updateConfirmButton();
   }
 
   function newBoxPayload() {
     const reg = window._annRegistry || [];
-    const out = reg.filter(e => e.ann.isNew && e.ann.type === 'Square' && !deletedIndices.has(e.ann.index)).map(e => {
-      const pe = reg[registryIdxByAnn(e.ann.parent_index)];
-      return pe ? { index: e.ann.index, pin_index: pe.ann.index, page: e.pg.new_page_num || e.pg.page_num,
-                    box: [e.ann.x, e.ann.y, e.ann.w, e.ann.h], pin: [pe.ann.num_x, pe.ann.num_y], content: pe.ann.content || '' } : null;
-    }).filter(Boolean);
+    const out = reg.filter(e => e.ann.isNew && e.ann.type === 'Square' && !deletedIndices.has(e.ann.index)).map(e =>
+      ({ index: e.ann.index, pin_index: null, page: e.pg.new_page_num || e.pg.page_num,
+         box: [e.ann.x, e.ann.y, e.ann.w, e.ann.h], pin: null, content: '' }));
     reg.filter(e => e.ann.isNew && e.ann.pinOnly && !deletedIndices.has(e.ann.index)).forEach(e =>
       out.push({ index: e.ann.index, pin_index: e.ann.index, page: e.pg.new_page_num || e.pg.page_num,
                  box: null, pin: [e.ann.num_x, e.ann.num_y], content: e.ann.content || '' }));
@@ -2090,6 +2174,8 @@
     const by = {}; pins.forEach(p => { if (!p.sub) by[p.action] = (by[p.action] || 0) + 1; });
     return { schema: 1, exported_at: new Date().toISOString(), tool: 'Carryover',
       mode_used: r.mode_used || (mode === 'add' ? 'place' : null), mode_auto: !!r.mode_auto, mode_reason: r.mode_reason || '', mode_override: window._override || null,
+      pin_colors: colorPayload(),
+      boxes_in_original: carriedBoxes().filter(e => e.ann.placed !== false).length, boxes_included: boxesIncluded, boxes_added: (window._annRegistry || []).filter(e => e.ann.isNew && e.ann.type === 'Square' && !deletedIndices.has(e.ann.index)).length,
       auto_counts: { total: r.total, moved: r.moved, needs_look: r.needs_look, content_removed: r.content_removed },
       processing_seconds: (window._resultsAt && window._jobStart) ? Math.round((window._resultsAt - window._jobStart) / 1000) : null,
       review_seconds: window._resultsAt ? Math.round((Date.now() - window._resultsAt) / 1000) : null,
@@ -2128,8 +2214,8 @@
         const res = await fetch(`/confirm/${currentJobId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deleted_indices: [...deletedIndices], positions: Object.fromEntries(dotOverrides), sides: Object.fromEntries(sideOverrides),
-          boxes: Object.fromEntries(boxEdits), edits: Object.fromEntries(contentEdits), new_boxes: newBoxPayload(), tracking: buildTracking() })
+          body: JSON.stringify({ deleted_indices: allDeleted(), positions: Object.fromEntries(dotOverrides), sides: Object.fromEntries(sideOverrides),
+          boxes: Object.fromEntries(boxEdits), edits: Object.fromEntries(contentEdits), new_boxes: newBoxPayload(), colors: colorPayload(), tracking: buildTracking() })
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
@@ -2195,7 +2281,7 @@
     document.getElementById('ann-list-header').style.display = '';
     const item = buildAnnItem(reg[i], i);
     document.getElementById('ann-list').appendChild(item);
-    renumber(); updateFilters(); updateConfirmButton();
+    renumber(); updateFilters(); updateConfirmButton(); applyPinColors();
     selectAnnotation(i);
     const ta = item.querySelector('.dc-edit');
     if (ta) setTimeout(() => ta.focus(), 50);
@@ -2352,7 +2438,7 @@
     reviewedIndices = new Set();
     dotOverrides.clear();
     sideOverrides.clear();
-    boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0;
+    boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0; offBoxes.clear(); boxesIncluded = false;
     if (drawMode) setDrawMode(false);
     if (pinMode) setPinMode(false);
     histReset();
