@@ -164,6 +164,24 @@
     .ann-mark.exp .pin-stem { stroke: var(--xc); }
     .ann-mark.exp .pin-dot { fill: var(--xc); }
     .ann-mark.exp text { fill: #fff; }
+    .more-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+    .more-btn { width: 30px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: #64748b; cursor: pointer; padding: 0; }
+    .more-btn:hover, .more-btn[aria-expanded="true"] { background: #e2e8f0; color: #0f172a; }
+    .more-btn:focus-visible { outline: 2px solid #4449F2; outline-offset: 1px; }
+    .more-menu { position: fixed; z-index: 1000; min-width: 210px; background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px #e2e8f0, 0 10px 24px rgb(15 23 42 / .16); padding: 4px 0; }
+    .more-menu[hidden] { display: none; }
+    .more-menu .mm-sec { padding: 10px 14px; margin: 0; }
+    .more-menu .mm-sec + .mm-sec { border-top: 1px solid #eef2f7; }
+    .more-menu .swatches { display: block; padding: 10px 14px; }
+    .more-menu .swatches .sw-lbl { display: block; margin-bottom: 8px; }
+    .more-menu .sw-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .more-menu .pg-move { margin: 0; justify-content: space-between; }
+    .more-menu .mm-actions { display: flex; flex-direction: column; padding: 4px; }
+    .more-menu .mm-item { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 7px; font-size: .8rem; font-weight: 600; color: #334155; cursor: pointer; }
+    .more-menu .mm-item[hidden] { display: none; }
+    .more-menu .mm-item:hover { background: #f1f5f9; }
+    html .more-menu .mm-item.act-remove, html[data-theme="tailwind"] .more-menu .mm-item.act-remove { color: #b91c1c; background: transparent; box-shadow: none; }
+    html .more-menu .mm-item.act-remove:hover { background: #fef2f2; }
     .swatches { display: flex; align-items: center; gap: 5px; margin: 0; padding: 16px 0 18px; flex-wrap: wrap; }
     .swatches .sw-lbl { font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-right: 0; white-space: nowrap; }
     .swatches .sw { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; background: var(--c); box-shadow: 0 0 0 1px #cbd5e1; cursor: pointer; padding: 0; }
@@ -1001,6 +1019,7 @@
   }
 
   // ── Show results ───────────────────────────────────────────────────────────
+  let isDeriv = false;
   const STATUS_LABELS = { moved: '✓ Moved', needs_look: '⚠ Needs a look', content_removed: '✕ Content removed' };
 
   // ── Column labels: hide the original, zoom the updated pages ───────────────
@@ -1123,8 +1142,10 @@
     const addMode = results.mode === 'add';
     document.getElementById('pages-panel').classList.toggle('orig-none', addMode);
     document.body.classList.toggle('add-mode', addMode);
-    STATUS_LABELS.moved = addMode ? '✓ Placed' : '✓ Moved';
-    document.querySelector('.tile.moved .tile-label').textContent = addMode ? 'Placed' : 'Moved';
+    isDeriv = results.mode_used === 'derivative';     // a first-time placement, so nothing was "moved" or "removed"
+    STATUS_LABELS.moved = (addMode || isDeriv) ? '✓ Placed' : '✓ Moved';
+    document.querySelector('.tile.moved .tile-label').textContent = (addMode || isDeriv) ? 'Placed' : 'Moved';
+    document.querySelector('.tile.removed .tile-label').textContent = isDeriv ? 'Not placed' : 'Removed';
     const sk = results.skipped || [];
     const skEl = document.getElementById('skipped-note');
     if (sk.length) {
@@ -1790,12 +1811,17 @@
       <div class="ann-body" id="${bodyId}" hidden>
         <div class="dc-edit-label"><span>Reference</span><span class="dc-edit-hint">Click to edit</span></div>
         <textarea class="dc-edit" rows="1" aria-label="Reference text" placeholder="Type the reference for this spot…">${esc(a.content)}</textarea>
-        <div class="swatches" role="group" aria-label="Pin color in the export"><span class="sw-lbl">Export color</span>${PIN_COLORS.map(c => `<button type="button" class="sw" data-c="${c[0]}" style="--c:${c[0]}" title="${c[1]}" aria-label="${c[1]}" aria-pressed="false"></button>`).join('')}</div>
-        <div class="pg-move"><label for="pgm-${idx}">Page</label><select id="pgm-${idx}" class="pg-sel" aria-label="Move this pin to another page"></select></div>
         ${locRows}
-        <div class="ann-actions">
-          <button type="button" class="act-btn secondary act-reset" hidden>Reset pin</button>
-          <button type="button" class="act-btn act-remove">Remove</button>
+        <div class="more-row">
+          <button type="button" class="more-btn" aria-haspopup="true" aria-expanded="false" aria-label="More options" title="More"><svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button>
+          <div class="more-menu" role="menu" hidden>
+            <div class="mm-sec swatches" role="group" aria-label="Pin color in the export"><span class="sw-lbl">Export color</span><div class="sw-row">${PIN_COLORS.map(c => `<button type="button" class="sw" data-c="${c[0]}" style="--c:${c[0]}" title="${c[1]}" aria-label="${c[1]}" aria-pressed="false"></button>`).join('')}</div></div>
+            <div class="mm-sec pg-move"><label for="pgm-${idx}">Page</label><select id="pgm-${idx}" class="pg-sel" aria-label="Move this pin to another page"></select></div>
+            <div class="mm-sec mm-actions">
+              <button type="button" class="mm-item act-reset" role="menuitem" hidden>Reset pin</button>
+              <button type="button" class="mm-item act-remove" role="menuitem">Remove</button>
+            </div>
+          </div>
         </div>
       </div>`;
     const ta = item.querySelector('.dc-edit');
@@ -1817,8 +1843,11 @@
     });
     fillPageSelect(psel, idx);
     item.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => setPinColor(idx, b.dataset.c)));
-    item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
-    item.querySelector('.act-reset').addEventListener('click', () => resetPosition(idx));
+    item.querySelector('.act-remove').addEventListener('click', () => { closeMoreMenus(); toggleDelete(idx, a.index); });
+    item.querySelector('.act-reset').addEventListener('click', () => { closeMoreMenus(); resetPosition(idx); });
+    { const mb = item.querySelector('.more-btn'), mm = item.querySelector('.more-menu');
+      mb.addEventListener('click', ev => { ev.stopPropagation(); const wasOpen = !mm.hidden; closeMoreMenus(); if (!wasOpen) openMoreMenu(mb, mm); });
+      mm.addEventListener('click', ev => ev.stopPropagation()); }
     item.querySelectorAll('.loc-row').forEach(row => {
       const ci = Number(row.dataset.loc);
       row.querySelector('.loc-show').addEventListener('click', () => selectAnnotation(ci));
@@ -1828,6 +1857,21 @@
     return item;
   }
 
+  function closeMoreMenus() {
+    document.querySelectorAll('.more-menu').forEach(m => { if (!m.hidden) { m.hidden = true; const b = m.parentNode.querySelector('.more-btn'); if (b) b.setAttribute('aria-expanded', 'false'); } });
+  }
+  function openMoreMenu(btn, menu) {
+    menu.hidden = false; btn.setAttribute('aria-expanded', 'true');
+    const r = btn.getBoundingClientRect(), mh = menu.offsetHeight, mw = menu.offsetWidth;
+    const below = window.innerHeight - r.bottom, top = (below >= mh + 8 || r.top < mh + 8) ? r.bottom + 4 : r.top - mh - 4;
+    menu.style.top = Math.max(8, Math.min(top, window.innerHeight - mh - 8)) + 'px';
+    menu.style.left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8)) + 'px';
+  }
+  document.addEventListener('click', closeMoreMenus);
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeMoreMenus(); });
+  window.addEventListener('resize', closeMoreMenus);
+  document.addEventListener('scroll', closeMoreMenus, true);
+
   // Sync badge + button labels with the item's state (removed / reviewed / matcher status)
   function fillPageSelect(sel, idx) {
     const e = (window._annRegistry || [])[idx]; if (!e) return;
@@ -1835,7 +1879,7 @@
     const want = pages.map(pg => pgNum(pg)).join(',') + '|' + cur;
     if (sel.dataset.sig === want) return;
     sel.dataset.sig = want;
-    sel.innerHTML = pages.map(pg => `<option value="${pgNum(pg)}"${pgNum(pg) === cur ? ' selected' : ''}>Page ${pgNum(pg)}</option>`).join('');
+    sel.innerHTML = pages.map(pg => `<option value="${pgNum(pg)}"${pgNum(pg) === cur ? ' selected' : ''}>${pgNum(pg)}</option>`).join('');
     sel.value = String(cur);
   }
   function refreshItem(item, entry) {
@@ -1854,7 +1898,7 @@
       }
     });
     const state = removed ? 'deleted' : worst;
-    const label = removed ? (a.method === 'absent' ? 'Not in this asset' : 'Removed') : state === 'reviewed' ? '✓ Adjusted' : (state === 'content_removed' && a.page_removed) ? '✕ Page removed' : (STATUS_LABELS[state] || state);
+    const label = removed ? (a.method === 'absent' ? 'Not in this asset' : (isDeriv ? 'Not placed' : 'Removed')) : state === 'reviewed' ? '✓ Adjusted' : (state === 'content_removed' && a.page_removed) ? '✕ Page removed' : (STATUS_LABELS[state] || state);
     const badge = item.querySelector('.ann-status');
     badge.className = 'badge ann-status ' + state;
     badge.textContent = label;
@@ -1868,7 +1912,7 @@
       const st = memberState(m.e), k = m.e.ann.index;
       const b = row.querySelector('.loc-status');
       b.className = 'badge loc-status ' + st;
-      b.textContent = st === 'deleted' ? 'Removed' : st === 'reviewed' ? '✓ Adjusted' : (STATUS_LABELS[st] || st);
+      b.textContent = st === 'deleted' ? (isDeriv ? 'Not placed' : 'Removed') : st === 'reviewed' ? '✓ Adjusted' : (STATUS_LABELS[st] || st);
       row.querySelector('.loc-reset').hidden = !(dotOverrides.has(k) || sideOverrides.has(k)) || removed;
     });
     item.querySelector('.act-reset').hidden = !(dotOverrides.has(a.index) || sideOverrides.has(a.index)) || removed;
@@ -2352,7 +2396,7 @@
     } else {
       label.textContent = 'Confirm & Download';
       const parts = [];
-      if (nDel) parts.push(`${nDel} removed`);
+      if (nDel) parts.push(`${nDel} ${isDeriv ? 'not placed' : 'removed'}`);
       if (nMoved) parts.push(`${nMoved} repositioned`);
       if (nNew) parts.push(`${nNew} added`);
       if (nText) parts.push(`${nText} edited`);
