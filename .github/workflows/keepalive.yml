@@ -1,0 +1,15 @@
+name: keepalive
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request /health
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then echo "APP_URL variable is not set"; exit 1; fi
+          curl -fsS --retry 3 --retry-delay 20 --max-time 90 "${APP_URL%/}/health"
