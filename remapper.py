@@ -1459,7 +1459,7 @@ def _mark_removed_pages(all_annots, results, n_old, n_new):
     results["removed_pages"] = sorted(p + 1 for p in removed)
 
 
-def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, progress=None):
+def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, progress=None, all_pages=False):
     """Number the annotations, build the review-screen preview data and write the output PDFs.
     old_pdf_path may be None (adding references to a first-time layout: there is no 'before')."""
     num_by_index = assign_numbers(all_annots)
@@ -1564,6 +1564,20 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, prog
             "old_aspect": old_ph / old_pw,
             "annotations": overlay_annots,
         })
+    if all_pages:
+        # Derivative: show every page of the new piece, including ones no callout landed on, so a reviewer can
+        # add citations there. (A version update only shows pages that have callouts.)
+        have = {p["new_page_num"] for p in pages_preview}
+        for out_pn in range(len(preview_doc)):
+            if out_pn + 1 in have:
+                continue
+            pw, ph = preview_doc[out_pn].rect.width, preview_doc[out_pn].rect.height
+            tot_w = pw + SIDEBAR_BASE * _scale(pw)
+            pages_preview.append({
+                "page_num": out_pn + 1, "new_page_num": out_pn + 1, "width": tot_w, "content_frac": pw / tot_w,
+                "height": ph, "aspect": ph / tot_w, "old_width": pw, "old_height": ph, "old_aspect": ph / pw,
+                "annotations": [], "empty": True})
+        pages_preview.sort(key=lambda p: p["new_page_num"])
     preview_doc.close()
     if old_preview_doc is not None:
         old_preview_doc.close()

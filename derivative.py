@@ -340,4 +340,4 @@ def process_derivative(src_path, deriv_path, output_path, progress=None):
             "note": info.match_note, "parent_index": None})
     _drop_duplicates(all_annots, results)
     src.close(); clean.close(); deriv.close()
-    return R._finalize(results, all_annots, src_path, deriv_path, output_path, progress)
+    return R._finalize(results, all_annots, src_path, deriv_path, output_path, progress, all_pages=True)
