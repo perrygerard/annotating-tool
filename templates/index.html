@@ -392,6 +392,8 @@
     html[data-theme="tailwind"] .tile.review .tile-num { color: var(--warn); }
     html[data-theme="tailwind"] .tile.removed .tile-num { color: var(--removed); }
     .filter-title { margin: 0 0 10px; }
+    .ref-filter { width: 100%; box-sizing: border-box; margin: 0 0 18px; padding: 9px 32px 9px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7.5l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 12px center; -webkit-appearance: none; appearance: none; font: inherit; font-size: .82rem; font-weight: 600; color: #0f172a; cursor: pointer; }
+    .ref-filter:focus { outline: none; border-color: #4449F2; box-shadow: 0 0 0 3px rgba(68,73,242,.15); }
     .ref-search { position: relative; margin: 0 0 10px; }
     .ref-search input { width: 100%; box-sizing: border-box; padding: 9px 32px 9px 34px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; font: inherit; font-size: .82rem; color: #0f172a; }
     .ref-search input::-webkit-search-cancel-button, .ref-search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
@@ -748,12 +750,12 @@
         <input type="search" id="ref-search" placeholder="Search references" aria-label="Search references" autocomplete="off" spellcheck="false">
         <button type="button" class="rs-clear" id="ref-search-clear" aria-label="Clear search" hidden>&times;</button>
       </div>
-      <div class="summary-tiles" role="group" aria-label="Filter references">
-        <button type="button" class="tile total active" data-filter="all" aria-pressed="true"><span class="tile-label">All</span><span class="tile-num" id="stat-total">0</span></button>
-        <button type="button" class="tile moved" data-filter="moved" aria-pressed="false"><span class="tile-label">Moved</span><span class="tile-num" id="stat-moved">0</span></button>
-        <button type="button" class="tile review" data-filter="review" aria-pressed="false"><span class="tile-label">Needs review</span><span class="tile-num" id="stat-review">0</span></button>
-        <button type="button" class="tile removed" data-filter="removed" aria-pressed="false"><span class="tile-label">Removed</span><span class="tile-num" id="stat-removed">0</span></button>
-      </div>
+      <select id="ref-filter" class="ref-filter" aria-label="Filter references">
+        <option value="all">All</option>
+        <option value="moved">Moved</option>
+        <option value="review">Needs review</option>
+        <option value="removed">Removed</option>
+      </select>
 
       <div id="rail-empty" aria-hidden="true">
         <div class="sk-head"></div>
@@ -1144,8 +1146,8 @@
     document.body.classList.toggle('add-mode', addMode);
     isDeriv = results.mode_used === 'derivative';     // a first-time placement, so nothing was "moved" or "removed"
     STATUS_LABELS.moved = (addMode || isDeriv) ? '✓ Placed' : '✓ Moved';
-    document.querySelector('.tile.moved .tile-label').textContent = (addMode || isDeriv) ? 'Placed' : 'Moved';
-    document.querySelector('.tile.removed .tile-label').textContent = isDeriv ? 'Not placed' : 'Removed';
+    FILTER_LABELS.moved = (addMode || isDeriv) ? 'Placed' : 'Moved';
+    FILTER_LABELS.removed = isDeriv ? 'Not placed' : 'Removed';
     const sk = results.skipped || [];
     const skEl = document.getElementById('skipped-note');
     if (sk.length) {
@@ -1699,18 +1701,17 @@
   }
   // Filter buttons double as live counters
   let activeFilter = 'all';
+  const FILTER_LABELS = { all: 'All', moved: 'Moved', review: 'Needs review', removed: 'Removed' };
   function updateFilters() {
     const items = [...document.querySelectorAll('.ann-item')];
     const n = { all: items.length, moved: 0, review: 0, removed: 0 };
     items.forEach(it => { n[it.dataset.bucket] = (n[it.dataset.bucket] || 0) + 1; });
-    document.getElementById('stat-total').textContent = n.all;
-    document.getElementById('stat-moved').textContent = n.moved;
-    document.getElementById('stat-review').textContent = n.review;
-    document.getElementById('stat-removed').textContent = n.removed;
-    document.querySelectorAll('.tile[data-filter]').forEach(t => {
-      const on = t.dataset.filter === activeFilter;
-      t.classList.toggle('active', on); t.setAttribute('aria-pressed', on ? 'true' : 'false');
+    const sel = document.getElementById('ref-filter');
+    [...sel.options].forEach(o => {
+      o.textContent = FILTER_LABELS[o.value] + ' (' + (n[o.value] || 0) + ')';
+      o.hidden = (o.value === 'removed' && document.body.classList.contains('add-mode'));
     });
+    sel.value = activeFilter;
     const q = searchTerms();
     let shown = 0;
     items.forEach(it => {
@@ -1775,7 +1776,7 @@
     document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { btn._pinned = false; show(false); } });
   })();
   function setFilter(f) { activeFilter = f; updateFilters(); }
-  document.querySelectorAll('.tile[data-filter]').forEach(t => t.addEventListener('click', () => setFilter(t.dataset.filter)));
+  document.getElementById('ref-filter').addEventListener('change', e => setFilter(e.target.value));
   const RANK = { needs_look: 4, content_removed: 3, moved: 2, reviewed: 1, deleted: 0 };
   function memberState(e) {
     const k = e.ann.index;
@@ -1809,7 +1810,6 @@
         <svg class="ann-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg>
       </button>
       <div class="ann-body" id="${bodyId}" hidden>
-        <div class="dc-edit-label"><span>Reference</span><span class="dc-edit-hint">Click to edit</span></div>
         <textarea class="dc-edit" rows="1" aria-label="Reference text" placeholder="Type the reference for this spot…">${esc(a.content)}</textarea>
         ${locRows}
         <div class="more-row">
