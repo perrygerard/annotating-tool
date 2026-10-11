@@ -111,6 +111,10 @@
     .tb-check { height: 34px; box-sizing: border-box; padding: 0 12px; border-radius: 8px; font-size: .8rem; font-weight: 600; color: #334155; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); background: #fff; white-space: nowrap; user-select: none; }
     .tb-check:hover { background: #f8fafc; }
     .tb-check input { margin: 0; accent-color: #4449F2; }
+    .pg-move { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; font-size: .78rem; font-weight: 600; color: #64748b; }
+    .pg-sel { flex: 1; min-width: 0; padding: 7px 8px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; font: inherit; font-size: .82rem; color: #0f172a; }
+    .pg-sel:focus { outline: none; border-color: #4449F2; box-shadow: 0 0 0 3px rgba(68,73,242,.15); }
+    .page-frame.drop-target { outline: 3px solid #4449F2; outline-offset: -3px; }
     .progress-hint { margin-top: 10px; font-size: 0.74rem; color: var(--ink-light); min-height: 1.2em; }
     .progress-bar { height: 100%; background: var(--ink); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
 
@@ -372,6 +376,7 @@
     .filter-title { margin: 0 0 10px; }
     .ref-search { position: relative; margin: 0 0 10px; }
     .ref-search input { width: 100%; box-sizing: border-box; padding: 9px 32px 9px 34px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; font: inherit; font-size: .82rem; color: #0f172a; }
+    .ref-search input::-webkit-search-cancel-button, .ref-search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
     .ref-search input::placeholder { color: #94a3b8; }
     .ref-search input:focus { outline: none; border-color: #4449F2; box-shadow: 0 0 0 3px rgba(68,73,242,.15); }
     .ref-search .rs-ico { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
@@ -1105,7 +1110,7 @@
     setBusy(false); cancelCtl = null; window._resultsAt = Date.now(); window._results = results;
     deletedIndices = new Set();
     reviewedIndices = new Set();
-    dotOverrides.clear();
+    dotOverrides.clear(); pageMoves.clear();
     sideOverrides.clear();
     boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0; offBoxes.clear(); boxesIncluded = false;
     if (drawMode) setDrawMode(false);
@@ -1250,12 +1255,23 @@
         let nx = start.x + (p.x - p0.x), ny = start.y + (p.y - p0.y);
         nx = Math.max(0, Math.min(nx, maxX)); ny = Math.max(0, Math.min(ny, vbH));      // the point stays on the page (_setPos keeps a grab margin)
         g._setPos(nx, ny);
+        setDropTarget(pageUnder(ev.clientX, ev.clientY, svg));      // dragged past this page onto another: it will land there
+        dragAutoScroll(true, ev, svg);
       });
       const end = ev => {
         if (!dragging) return;
         dragging = false; g.classList.remove('dragging'); g._free = false;
+        dragAutoScroll(false);
+        const tpg = _dropPg; setDropTarget(null);
         try { g.releasePointerCapture(ev.pointerId); } catch (e) {}
         if (!moved && mode === 'aim') g._off = offStart.slice();
+        if (moved && mode === 'whole' && tpg && ev.type === 'pointerup') {
+          const tp = tpg._newSvg.createSVGPoint(); tp.x = ev.clientX; tp.y = ev.clientY;
+          const q = tp.matrixTransform(tpg._newSvg.getScreenCTM().inverse());
+          const gx = p0.x - start.x, gy = p0.y - start.y;                 // keep the same grab offset on the new page
+          movePinToPage(registryIdxByAnn(ann.index), tpg, (q.x - gx) / tpg.width, (q.y - gy) / tpg.height);
+          return;
+        }
         if (moved && mode === 'aim') { g._off = (g._shown || g._off).slice(); onPinAimed(ann.index, g._px / vbW, g._py / vbH, offStart); }
         else if (moved) onMarkerMoved(ann.index, g._px / vbW, g._py / vbH);
       };
@@ -1775,6 +1791,7 @@
         <div class="dc-edit-label"><span>Reference</span><span class="dc-edit-hint">Click to edit</span></div>
         <textarea class="dc-edit" rows="1" aria-label="Reference text" placeholder="Type the reference for this spot…">${esc(a.content)}</textarea>
         <div class="swatches" role="group" aria-label="Pin color in the export"><span class="sw-lbl">Export color</span>${PIN_COLORS.map(c => `<button type="button" class="sw" data-c="${c[0]}" style="--c:${c[0]}" title="${c[1]}" aria-label="${c[1]}" aria-pressed="false"></button>`).join('')}</div>
+        <div class="pg-move"><label for="pgm-${idx}">Page</label><select id="pgm-${idx}" class="pg-sel" aria-label="Move this pin to another page"></select></div>
         ${locRows}
         <div class="ann-actions">
           <button type="button" class="act-btn secondary act-reset" hidden>Reset pin</button>
@@ -1788,6 +1805,17 @@
       if (!a.isNew) { if (ta.value === origText) contentEdits.delete(a.index); else contentEdits.set(a.index, ta.value); updateConfirmButton(); }
     });
     item.querySelector('.ann-head').addEventListener('click', () => toggleItem(idx));
+    const psel = item.querySelector('.pg-sel');
+    psel.addEventListener('focus', () => fillPageSelect(psel, idx));
+    psel.addEventListener('mousedown', () => fillPageSelect(psel, idx));
+    psel.addEventListener('change', () => {
+      const e = window._annRegistry[idx], tpg = pageByNum(Number(psel.value));
+      if (!e || !tpg || tpg === e.pg) return;
+      const g = e.newRectEl, xf = g._px / e.pg.width, yf = g._py / e.pg.height;
+      movePinToPage(idx, tpg, xf, yf);
+      selectAnnotation(idx);
+    });
+    fillPageSelect(psel, idx);
     item.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => setPinColor(idx, b.dataset.c)));
     item.querySelector('.act-remove').addEventListener('click', () => toggleDelete(idx, a.index));
     item.querySelector('.act-reset').addEventListener('click', () => resetPosition(idx));
@@ -1801,7 +1829,17 @@
   }
 
   // Sync badge + button labels with the item's state (removed / reviewed / matcher status)
+  function fillPageSelect(sel, idx) {
+    const e = (window._annRegistry || [])[idx]; if (!e) return;
+    const cur = pgNum(e.pg), pages = allNewPages();
+    const want = pages.map(pg => pgNum(pg)).join(',') + '|' + cur;
+    if (sel.dataset.sig === want) return;
+    sel.dataset.sig = want;
+    sel.innerHTML = pages.map(pg => `<option value="${pgNum(pg)}"${pgNum(pg) === cur ? ' selected' : ''}>Page ${pgNum(pg)}</option>`).join('');
+    sel.value = String(cur);
+  }
   function refreshItem(item, entry) {
+    { const ps = item.querySelector('.pg-sel'); if (ps) fillPageSelect(ps, Number(item.dataset.idx)); }
     const a = entry.ann;
     const group = groupOf(Number(item.dataset.idx));
     const removed = deletedIndices.has(a.index);
@@ -2125,6 +2163,83 @@
 
   function autosize(ta) { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
 
+
+  // ── Moving a pin to another page ───────────────────────────────────────────
+  const pageMoves = new Map();                 // annotation .index -> number of the updated page it now sits on (only when not its original page)
+  const pgNum = pg => pg.new_page_num || pg.page_num;
+  function allNewPages() {                     // one entry per updated page shown in the review
+    const seen = new Map();
+    ((window._results || {}).pages || []).forEach(pg => { const n = pgNum(pg); if (!seen.has(n) && pg._newSvg) seen.set(n, pg); });
+    return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(x => x[1]);
+  }
+  function pageByNum(n) { return allNewPages().find(pg => pgNum(pg) === n) || null; }
+  let _dropPg = null, _asTimer = null, _asLast = null;
+  function setDropTarget(pg) {
+    if (pg === _dropPg) return;
+    if (_dropPg && _dropPg._newSvg && _dropPg._newSvg.parentNode) _dropPg._newSvg.parentNode.classList.remove('drop-target');
+    _dropPg = pg;
+    if (pg && pg._newSvg && pg._newSvg.parentNode) pg._newSvg.parentNode.classList.add('drop-target');
+  }
+  function pageUnder(x, y, exceptSvg) {
+    const panel = document.getElementById('pages-panel'), pr = panel.getBoundingClientRect();
+    if (x < pr.left || x > pr.right || y < pr.top || y > pr.bottom) return null;
+    for (const pg of allNewPages()) {
+      if (pg._newSvg === exceptSvg || !pg._newScroll) continue;
+      const r = pg._newScroll.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return pg;
+    }
+    return null;
+  }
+  // While a pin is dragged near the top or bottom of the page list, the list scrolls so a far page can be reached
+  function dragAutoScroll(on, ev, svg) {
+    if (!on) { clearInterval(_asTimer); _asTimer = null; return; }
+    _asLast = { x: ev.clientX, y: ev.clientY, svg };
+    if (_asTimer) return;
+    _asTimer = setInterval(() => {
+      const panel = document.getElementById('pages-panel'), r = panel.getBoundingClientRect(), y = _asLast.y, E = 70;
+      let dy = 0;
+      if (y < r.top + E) dy = -Math.ceil((r.top + E - y) / 4); else if (y > r.bottom - E) dy = Math.ceil((y - (r.bottom - E)) / 4);
+      if (dy) { panel.scrollTop += Math.max(-36, Math.min(36, dy)); setDropTarget(pageUnder(_asLast.x, _asLast.y, _asLast.svg)); }
+    }, 16);
+  }
+  // Put a pin on another page (no history, no bookkeeping beyond where it lives): the pin is rebuilt in that page's drawing
+  function _placePin(idx, tpg, xf, yf) {
+    const reg = window._annRegistry || [], e = reg[idx], B = window._builders;
+    if (!e || !B || !tpg || !tpg._newSvg) return false;
+    const a = e.ann, old = e.newRectEl;
+    if (!e.homePg) { e.homePg = e.pg; e.homeFrac = [a.dot_x, a.dot_y]; }
+    const off = (old._shown || old._off).slice(), cls = (old.getAttribute('class') || '').replace(/\b(dragging|active)\b/g, '').replace(/\s+/g, ' ').trim();
+    const keep = [a.dot_x, a.dot_y];
+    a.dot_x = xf; a.dot_y = yf;                                   // buildPin starts the pin here
+    const g = B.buildPin(tpg._newSvg, a, tpg.width, tpg.height, tpg.content_frac || 1);
+    a.dot_x = keep[0]; a.dot_y = keep[1];                         // the annotation keeps its original (automatic) spot for the record
+    old.remove();
+    g.setAttribute('class', cls);
+    g._defDir = old._defDir; g._dir = old._dir; g._off = off;
+    g._orig = { px: e.homeFrac[0] * tpg.width, py: e.homeFrac[1] * tpg.height };
+    g._setZoom(zoomLevel());
+    g._setPos(xf * tpg.width, yf * tpg.height);
+    e.newRectEl = g; e.newScrollEl = tpg._newScroll; e.pg = tpg;
+    g.addEventListener('click', () => selectAnnotation(idx));
+    const k = a.index;
+    dotOverrides.set(k, [xf, yf]);
+    if (e.homePg && pgNum(tpg) !== pgNum(e.homePg)) pageMoves.set(k, pgNum(tpg)); else pageMoves.delete(k);
+    if (a.isNew) { a.num_x = xf; a.num_y = yf; }
+    return true;
+  }
+  function movePinToPage(idx, tpg, xf, yf) {
+    const e = (window._annRegistry || [])[idx]; if (!e || !tpg) return;
+    xf = Math.max(0, Math.min(1, xf)); yf = Math.max(0, Math.min(1, yf));
+    const before = _pinState(e);
+    if (!_placePin(idx, tpg, xf, yf)) return;
+    const k = e.ann.index;
+    if (!reviewedIndices.has(k)) { reviewedIndices.add(k); e.autoReviewed = true; }
+    const after = _pinState(e);
+    hrec(() => _pinRestore(idx, before), () => _pinRestore(idx, after));
+    renumber(); refreshGroup(idx); updateConfirmButton(); applyPinColors();
+    toast('Moved to page ' + pgNum(tpg) + '.');
+  }
+
   function onMarkerMoved(annIndex, xf, yf) {
     const idx = registryIdxByAnn(annIndex);
     const entry = (window._annRegistry || [])[idx];
@@ -2172,8 +2287,10 @@
   function resetPosition(idx) {
     const entry = (window._annRegistry || [])[idx];
     if (!entry) return;
+    if (entry.homePg && entry.pg !== entry.homePg) _placePin(idx, entry.homePg, entry.homeFrac[0], entry.homeFrac[1]);    // back to its own page
     const g = entry.newRectEl;
     if (g && g._setPos) { g._setDir(g._defDir); g._setPos(g._orig.px, g._orig.py); }
+    pageMoves.delete(entry.ann.index);
     dotOverrides.delete(entry.ann.index);
     sideOverrides.delete(entry.ann.index);
     if (entry.autoReviewed) { reviewedIndices.delete(entry.ann.index); entry.autoReviewed = false; }
@@ -2286,13 +2403,14 @@
       else if (deletedIndices.has(k)) action = 'removed';
       else {
         if (ov && ox != null) { dist = Math.hypot((ov[0] - ox) * W, (ov[1] - oy) * H); if (dist > 2) action = 'moved'; }
+        if (pageMoves.has(k)) action = 'moved_page';
         if (action === 'untouched' && sideOverrides.has(k)) action = Array.isArray(sideOverrides.get(k)) ? 'ring_moved' : 'turned';
         if (action === 'untouched' && contentEdits.has(k)) action = 'text_edited';
       }
       pins.push({ index: k, number: a.number == null ? null : a.number, page: pg.new_page_num || pg.page_num || null,
         sub: a.sub_label || '', text: (a.content || '').slice(0, 60),
         auto: a.isNew ? null : { status: a.status, method: a.method, confidence: a.confidence, x: round(ox), y: round(oy), snapped_pt: a.snapped || 0 },
-        action, moved_pt: Math.round(dist), final: ov ? [round(ov[0]), round(ov[1])] : null,
+        action, moved_to_page: pageMoves.has(k) ? { from: e.homePg ? pgNum(e.homePg) : null, to: pageMoves.get(k) } : null, moved_pt: Math.round(dist), final: ov ? [round(ov[0]), round(ov[1])] : null,
         turned: sideOverrides.has(k) && !Array.isArray(sideOverrides.get(k)), ring: Array.isArray(sideOverrides.get(k)) ? sideOverrides.get(k) : null, text_edited: contentEdits.has(k), adjusted_flag: reviewedIndices.has(k) });
     });
     const by = {}; pins.forEach(p => { if (!p.sub) by[p.action] = (by[p.action] || 0) + 1; });
@@ -2339,7 +2457,7 @@
         const res = await fetch(`/confirm/${currentJobId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deleted_indices: allDeleted(), positions: Object.fromEntries(dotOverrides), sides: Object.fromEntries(sideOverrides),
+          body: JSON.stringify({ deleted_indices: allDeleted(), positions: Object.fromEntries(dotOverrides), pages: Object.fromEntries([...pageMoves].filter(([k]) => !(window._annRegistry || []).some(e => e.ann.index === k && e.ann.isNew))), sides: Object.fromEntries(sideOverrides),
           boxes: Object.fromEntries(boxEdits), edits: Object.fromEntries(contentEdits), new_boxes: newBoxPayload(), colors: colorPayload(), tracking: buildTracking() })
         });
         if (!res.ok) {
@@ -2452,11 +2570,16 @@
     if (k === 'y' || ev.shiftKey) histRedo(); else histUndo();
   });
 
-  const _pinState = e => { const k = e.ann.index, g = e.newRectEl; return { dir: g && g._dir, off: g && g._off ? g._off.slice() : null, dot: dotOverrides.has(k) ? dotOverrides.get(k).slice() : null,
+  const _pinState = e => { const k = e.ann.index, g = e.newRectEl; return { pg: e.pg, dir: g && g._dir, off: g && g._off ? g._off.slice() : null, dot: dotOverrides.has(k) ? dotOverrides.get(k).slice() : null,
     side: sideOverrides.has(k) ? sideOverrides.get(k) : null, rev: reviewedIndices.has(k), auto: !!e.autoReviewed }; };
   function _pinRestore(idx, s) {
     const e = (window._annRegistry || [])[idx]; if (!e) return;
-    const k = e.ann.index, g = e.newRectEl;
+    const k = e.ann.index;
+    if (s.pg && s.pg !== e.pg) {                                   // the pin was on another page: put it back there first
+      const hf = e.homeFrac || [e.ann.dot_x, e.ann.dot_y], at = s.dot || hf;
+      _placePin(idx, s.pg, at[0], at[1]);
+    }
+    const g = e.newRectEl;
     if (s.dot) dotOverrides.set(k, s.dot); else dotOverrides.delete(k);
     if (s.side !== null) sideOverrides.set(k, s.side); else sideOverrides.delete(k);
     if (s.rev) reviewedIndices.add(k); else reviewedIndices.delete(k);

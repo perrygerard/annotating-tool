@@ -486,6 +486,13 @@ def confirm(job_id):
     all_annots = job.get("_all_annots")
     new_pdf_path = job.get("new_pdf_path") or job.get("annotated_path")
     output_path = job.get("output_path")
+    # Pins moved to another page in the review: { "<annotation index>": page number (1-based) of the updated PDF }
+    page_moves = {}
+    for k, v in (data.get("pages") or {}).items():
+        try:
+            page_moves[int(k)] = int(v) - 1
+        except (ValueError, TypeError):
+            continue
 
     def _fracs(v, n):
         try:
@@ -520,6 +527,10 @@ def confirm(job_id):
 
     try:
         eff = _effective_annots(all_annots, new_pdf_path, edits, new_boxes, overrides)
+        if page_moves:
+            with fitz.open(new_pdf_path) as _d:
+                _n = len(_d)
+            eff = [dataclasses.replace(a, new_page_num=page_moves[a.index]) if (a.index in page_moves and 0 <= page_moves[a.index] < _n) else a for a in eff]
         tracking = data.get("tracking")
         tracking_bytes = None
         if isinstance(tracking, dict):
