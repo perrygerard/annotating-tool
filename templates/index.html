@@ -96,6 +96,21 @@
     @keyframes dl-rot { to { transform: rotate(360deg); } }
     .progress-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.72rem; color: var(--ink-light); font-variant-numeric: tabular-nums; }
     .empty-src-note { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:16px; font-size:.85rem; color:var(--ink-light); background:var(--surface-2, rgba(0,0,0,.03)); }
+    .conf-card { position: relative; }
+    .conf-info { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #64748b; cursor: pointer; align-self: center; }
+    .conf-info:hover, .conf-info[aria-expanded="true"] { background: #e2e8f0; color: #0f172a; }
+    .conf-tip { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 240px; padding: 12px 14px; border-radius: 10px; background: #0f172a; color: #e2e8f0; box-shadow: 0 8px 24px rgb(15 23 42 / .25); }
+    .conf-tip .conf-bar { background: #334155; margin: 0 0 8px; }
+    .conf-tip .conf-sub { color: #e2e8f0; }
+    .conf-rerun { margin-top: 8px; font-size: .8rem; }
+    .lbl-paren { font-weight: 500; color: #64748b; text-transform: none; letter-spacing: 0; }
+    .col-label .cl-btn.lbl-link { height: auto !important; padding: 0 !important; margin: 0 1px; box-shadow: none !important; background: none !important; border-radius: 0 !important; font-size: inherit !important; font-weight: 600 !important; color: #4449F2 !important; text-decoration: underline; text-underline-offset: 2px; }
+    .col-label .cl-btn.lbl-link:disabled { opacity: .45; }
+    body.add-mode .lbl-paren { display: none; }
+    .toolbar .tb-right { margin-left: auto; }
+    .tb-check { height: 34px; box-sizing: border-box; padding: 0 12px; border-radius: 8px; font-size: .8rem; font-weight: 600; color: #334155; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); background: #fff; white-space: nowrap; user-select: none; }
+    .tb-check:hover { background: #f8fafc; }
+    .tb-check input { margin: 0; accent-color: #4449F2; }
     .progress-hint { margin-top: 10px; font-size: 0.74rem; color: var(--ink-light); min-height: 1.2em; }
     .progress-bar { height: 100%; background: var(--ink); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
 
@@ -355,6 +370,14 @@
     html[data-theme="tailwind"] .tile.review .tile-num { color: var(--warn); }
     html[data-theme="tailwind"] .tile.removed .tile-num { color: var(--removed); }
     .filter-title { margin: 0 0 10px; }
+    .ref-search { position: relative; margin: 0 0 10px; }
+    .ref-search input { width: 100%; box-sizing: border-box; padding: 9px 32px 9px 34px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; font: inherit; font-size: .82rem; color: #0f172a; }
+    .ref-search input::placeholder { color: #94a3b8; }
+    .ref-search input:focus { outline: none; border-color: #4449F2; box-shadow: 0 0 0 3px rgba(68,73,242,.15); }
+    .ref-search .rs-ico { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+    .ref-search .rs-clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: #64748b; cursor: pointer; font-size: 15px; line-height: 1; }
+    .ref-search .rs-clear:hover { background: #f1f5f9; }
+    .ref-none { margin: 12px 2px; font-size: .82rem; color: #64748b; }
     .conf-card { margin: 0 0 20px; padding: 14px 16px; border-radius: 12px; background: #f8fafc; box-shadow: inset 0 0 0 1px #e2e8f0; }
     .conf-top { display: flex; align-items: baseline; gap: 8px; }
     .conf-pct { font-size: 1.7rem; font-weight: 700; letter-spacing: -.03em; color: #0f172a; font-variant-numeric: tabular-nums; }
@@ -574,7 +597,6 @@
 </svg>
   <div class="header-actions" id="header-actions" hidden>
     <span class="confirm-hint" id="confirm-hint"></span>
-    <span id="conf-mode" hidden><button type="button" class="conf-link hdr-link" id="conf-rerun"></button></span>
     <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
@@ -604,11 +626,19 @@
           <label class="menu-item"><input type="checkbox" id="box-incl-cb"><span id="box-incl-text">Include boxes from the original</span></label>
         </div>
       </div>
+      <div id="conf-colors"><label class="conf-switch tb-check" title="Preview the pin colors that will be in the exported PDF"><input type="checkbox" id="conf-colors-cb"> Show export pin colors</label></div>
     </div>
-    <span class="tb-sep" aria-hidden="true"></span>
-    <div class="tb-group">
+    <div class="tb-group tb-right">
       <button type="button" class="cl-btn" data-act="undo" id="undo-btn" disabled title="Undo (Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
       <button type="button" class="cl-btn" data-act="redo" id="redo-btn" disabled title="Redo (Shift+Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>Redo</button>
+      <span class="tb-sep" aria-hidden="true"></span>
+      <div class="zoom-group" role="group" aria-label="Zoom the pages">
+        <button type="button" class="cl-btn icon" data-act="zoom-out" aria-label="Zoom out" title="Zoom out" disabled>
+          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
+        <button type="button" class="cl-btn zoom-val" data-act="zoom-reset" aria-label="Reset zoom" title="Reset zoom" id="zoom-val" disabled>100%</button>
+        <button type="button" class="cl-btn icon" data-act="zoom-in" aria-label="Zoom in" title="Zoom in" disabled>
+          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M6 1.5v9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
+      </div>
     </div>
   </div>
   <div class="results-layout">
@@ -680,12 +710,21 @@
     <div class="detail-panel">
       <!-- Stat tiles -->
       <div class="conf-card" id="conf-card" hidden>
-        <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">claims located</span></div>
-        <div class="conf-bar"><i id="conf-bar-fill"></i></div>
-        <div class="conf-sub" id="conf-sub"></div>
-        <div class="conf-mode" id="conf-colors"><label class="conf-switch"><input type="checkbox" id="conf-colors-cb"> Show export pin colors</label></div>
+        <div class="conf-top"><span class="conf-pct" id="conf-pct">0%</span><span class="conf-lbl">claims located</span>
+          <button type="button" class="conf-info" id="conf-info" aria-label="How claims were located" aria-expanded="false" aria-controls="conf-tip"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 9v5"/><circle cx="10" cy="6.2" r=".6" fill="currentColor"/></svg></button>
+          <div class="conf-tip" id="conf-tip" role="tooltip" hidden>
+            <div class="conf-bar"><i id="conf-bar-fill"></i></div>
+            <div class="conf-sub" id="conf-sub"></div>
+          </div>
+        </div>
+        <div class="conf-rerun" id="conf-mode" hidden><button type="button" class="conf-link" id="conf-rerun"></button></div>
       </div>
       <div class="detail-header filter-title" id="filter-title">Filter</div>
+      <div class="ref-search" role="search">
+        <svg class="rs-ico" width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="M13.5 13.5L17 17"/></svg>
+        <input type="search" id="ref-search" placeholder="Search references" aria-label="Search references" autocomplete="off" spellcheck="false">
+        <button type="button" class="rs-clear" id="ref-search-clear" aria-label="Clear search" hidden>&times;</button>
+      </div>
       <div class="summary-tiles" role="group" aria-label="Filter references">
         <button type="button" class="tile total active" data-filter="all" aria-pressed="true"><span class="tile-label">All</span><span class="tile-num" id="stat-total">0</span></button>
         <button type="button" class="tile moved" data-filter="moved" aria-pressed="false"><span class="tile-label">Moved</span><span class="tile-num" id="stat-moved">0</span></button>
@@ -708,6 +747,7 @@
       <!-- Annotation index list -->
       <div class="detail-header" id="ann-list-header" style="display:none;margin-top:16px;">References</div>
       <div id="ann-list"></div>
+      <p class="ref-none" id="ref-none" hidden></p>
 
       <button class="reset-btn" onclick="resetForm()">← Process another PDF</button>
     </div>
@@ -961,14 +1001,8 @@
   // ── Column labels: hide the original, zoom the updated pages ───────────────
   const COL_LABELS_HTML = `
     <div class="col-labels">
-      <div class="col-label"><button type="button" class="cl-btn cl-left" data-act="toggle-orig" id="orig-btn" disabled>Hide original</button><span id="lbl-left">Original</span></div>
-      <div class="col-label"><button type="button" class="cl-btn cl-left show-orig" data-act="toggle-orig" id="show-orig-btn" disabled>Show original</button><span>Updated</span><div class="cl-right" role="group" aria-label="Zoom the pages"><div class="zoom-group">
-      <button type="button" class="cl-btn icon" data-act="zoom-out" aria-label="Zoom out" title="Zoom out" disabled>
-        <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
-      <button type="button" class="cl-btn zoom-val" data-act="zoom-reset" aria-label="Reset zoom" title="Reset zoom" id="zoom-val" disabled>100%</button>
-      <button type="button" class="cl-btn icon" data-act="zoom-in" aria-label="Zoom in" title="Zoom in" disabled>
-        <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M6 1.5v9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
-    </div></div></div>
+      <div class="col-label"><span id="lbl-left">Original</span><span class="lbl-paren">(<button type="button" class="cl-btn lbl-link" data-act="toggle-orig" id="orig-btn" disabled>Hide</button>)</span></div>
+      <div class="col-label"><span>Updated</span><span class="lbl-paren show-orig">(<button type="button" class="cl-btn lbl-link" data-act="toggle-orig" id="show-orig-btn" disabled>Show original</button>)</span></div>
     </div>`;
   const ZOOMS = [1, 1.5, 2, 3, 4];
   let zoomIdx = 0, activeEntry = null;
@@ -1528,7 +1562,7 @@
       numbered.forEach(({ entry, idx }) => listEl.appendChild(buildAnnItem(entry, idx)));
     }
     showModeNote(results);
-    activeFilter = 'all';
+    activeFilter = 'all'; document.getElementById('ref-search').value = '';
     // Claims that were not found in the new piece start out removed (kept in the list, left out of the export)
     window._initNumbers = true;
     annRegistry.forEach((entry, idx) => {
@@ -1640,7 +1674,15 @@
       const on = t.dataset.filter === activeFilter;
       t.classList.toggle('active', on); t.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-    items.forEach(it => { it.hidden = activeFilter !== 'all' && it.dataset.bucket !== activeFilter; });
+    const q = searchTerms();
+    let shown = 0;
+    items.forEach(it => {
+      it.hidden = (activeFilter !== 'all' && it.dataset.bucket !== activeFilter) || !matchesSearch(it, q);
+      if (!it.hidden) shown++;
+    });
+    const none = document.getElementById('ref-none');
+    if (none) { none.hidden = !(items.length && !shown); none.textContent = (q.length || q.pages.length) ? 'No references match “' + document.getElementById('ref-search').value.trim() + '”.' : 'Nothing in this filter.'; }
+    document.getElementById('ref-search-clear').hidden = !(q.length || q.pages.length);
     updateConfidence(items);
   }
   // Overall placement confidence: average over the pins still in play (removed ones don't count).
@@ -1664,6 +1706,37 @@
       ? `${solid} of ${n} located with confidence` + (look ? ` · ${look} to review` : ' · nothing left to review')
       : 'No pins in play';
   }
+  // Search: every word must appear in the reference text (as currently edited), its number, or its page
+  function searchTerms() {
+    let v = (document.getElementById('ref-search').value || '').toLowerCase();
+    const pages = []; v = v.replace(/\bpage\s*(\d+)/g, (_, n) => { pages.push(Number(n)); return ' '; });
+    return Object.assign(v.split(/\s+/).filter(Boolean), { pages });
+  }
+  function matchesSearch(it, q) {
+    if (!q.length && !q.pages.length) return true;
+    const e = (window._annRegistry || [])[Number(it.dataset.idx)]; if (!e) return true;
+    const ta = it.querySelector('.dc-edit');
+    const pgs = groupOf(Number(it.dataset.idx)).map(m => m.e.pg.new_page_num || m.e.pg.page_num);
+    if (!q.pages.every(n => pgs.includes(n))) return false;
+    const hay = ((ta ? ta.value : e.ann.content) + ' #' + e.ann.number + ' ' + e.ann.number + ' ' + (e.ann.author || '')).toLowerCase();
+    return q.every(t => hay.includes(t));
+  }
+  (function () {
+    const inp = document.getElementById('ref-search');
+    inp.addEventListener('input', () => updateFilters());
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Escape') { inp.value = ''; updateFilters(); } });
+    document.getElementById('ref-search-clear').addEventListener('click', () => { inp.value = ''; updateFilters(); inp.focus(); });
+  })();
+  (function () {
+    const btn = document.getElementById('conf-info'), tip = document.getElementById('conf-tip');
+    const show = on => { tip.hidden = !on; btn.setAttribute('aria-expanded', on ? 'true' : 'false'); };
+    btn.addEventListener('mouseenter', () => show(true));
+    btn.addEventListener('mouseleave', () => { if (!btn._pinned) show(false); });
+    btn.addEventListener('focus', () => show(true));
+    btn.addEventListener('blur', () => { btn._pinned = false; show(false); });
+    btn.addEventListener('click', () => { btn._pinned = !btn._pinned; show(btn._pinned); });
+    document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { btn._pinned = false; show(false); } });
+  })();
   function setFilter(f) { activeFilter = f; updateFilters(); }
   document.querySelectorAll('.tile[data-filter]').forEach(t => t.addEventListener('click', () => setFilter(t.dataset.filter)));
   const RANK = { needs_look: 4, content_removed: 3, moved: 2, reviewed: 1, deleted: 0 };
