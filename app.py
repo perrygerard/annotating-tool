@@ -62,6 +62,12 @@ def _too_large(_e):
                          "Try compressing the PDFs or splitting them."), 413
 
 
+@app.route("/health")
+def health():
+    """Cheap wake-up / uptime check (point a free pinger here every 5 minutes to stop the host sleeping)."""
+    return "ok", 200, {"Cache-Control": "no-store"}
+
+
 @app.route("/")
 def index():
     return render_template("index.html")

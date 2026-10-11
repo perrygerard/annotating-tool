@@ -664,7 +664,7 @@
         <div class="drop-foot">
           <span class="drop-note">Large PDFs are fine, up to 400 MB combined.</span>
           <div class="drop-act">
-          <button class="submit-btn" id="submit-btn" disabled onclick="submitJob()">Carry annotations over</button>
+          <button class="submit-btn" id="submit-btn" disabled onclick="autoTries = 0; submitJob()">Carry annotations over</button>
           </div>
         </div>
         <div class="drop-actions" hidden>
@@ -808,6 +808,32 @@
     return 'The server returned an unexpected error (' + status + '). Try again, or try smaller PDFs.';
   }
 
+  // ── Waking the server, and picking up again if it restarts ─────────────────
+  let autoTries = 0;
+  function warmServer() { fetch('/health', { cache: 'no-store' }).catch(() => {}); }
+  setInterval(warmServer, 4 * 60 * 1000);                 // an open tab keeps the host awake too
+  warmServer();                                           // the host sleeps when idle: wake it as the page opens
+  ['change', 'drop'].forEach(ev => document.addEventListener(ev, warmServer, { once: true }));
+  // The files are still in the page, so when the server drops a job we just send them again.
+  function autoRetry(force, why) {
+    if (autoTries >= 2) return false;
+    autoTries++;
+    cancelCtl = null; currentJobId = null;
+    const el = document.getElementById('progress-detail');
+    document.getElementById('progress-title').textContent = 'Picking up where it left off…';
+    el.textContent = why + ' Sending your files again, nothing to do on your side. (attempt ' + (autoTries + 1) + ' of 3)';
+    document.getElementById('progress-hint').textContent = '';
+    setTimeout(() => { warmServer(); submitJob(force); }, 6000);
+    return true;
+  }
+  function expectText() {
+    const mb = ((inputAnnotated.files[0] || {}).size || 0) + ((inputNew.files[0] || {}).size || 0);
+    const m = mb / 1048576;
+    return m > 40 ? 'Large files: this can take 10 minutes or more. You can leave this tab open and come back.'
+         : m > 10 ? 'Mid-size files: usually a few minutes. Keep this tab open.'
+         : 'Usually under a couple of minutes. Keep this tab open.';
+  }
+
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function submitJob(force) {
     hideError();
@@ -829,7 +855,7 @@
     const timer = setInterval(() => {                     // elapsed clock + reassurance, so a slow job never looks frozen
       const s = Math.floor((Date.now() - t0) / 1000);
       elapsedEl.textContent = 'Elapsed ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
-      hintEl.textContent = s > 45 ? 'Big files can take several minutes. Keep this tab open.' : '';
+      hintEl.textContent = s > 45 ? expectText() : (s > 12 && !currentJobId ? 'The server may be waking up after being idle. This can take up to a minute.' : '');
     }, 1000);
     cancelCtl = { timer, xhr: null, cancelled: false };
     titleEl.textContent = 'Uploading your PDFs…';
@@ -855,6 +881,7 @@
       const res = { ok: status >= 200 && status < 300, status };
       if (!res.ok) {
         clearInterval(timer);
+        if ([502, 503, 504, 524].includes(res.status) && autoRetry(force, 'The server was waking up or restarting.')) return;
         showUploadError(data.error || httpErrorMessage(res.status));
         return;
       }
@@ -868,6 +895,7 @@
           if (!currentJobId) return;
           if (r.status === 404) {
             clearInterval(pollInterval); clearInterval(timer);
+            if (autoRetry(force, 'The server restarted while working.')) return;
             showUploadError('The server restarted while working on your files (this can happen with very large PDFs when it runs out of memory), so the job was lost. Please try again, or use smaller PDFs.');
             return;
           }
@@ -887,6 +915,7 @@
         } catch(e) {
           if (++pollFails >= 8) {
             clearInterval(pollInterval); clearInterval(timer);
+            if (autoRetry(force, 'Lost contact with the server.')) return;
             showUploadError('Lost contact with the server while it was working. It may have restarted or gone offline. Check your connection and try again.');
           }
         }
@@ -894,6 +923,7 @@
     } catch(e) {
       clearInterval(timer);
       if (cancelCtl && cancelCtl.cancelled) return;
+      if (autoRetry(force, 'The upload was interrupted.')) return;
       showUploadError('Couldn’t finish the upload. Your connection may have dropped, or the server may have rejected or restarted on a very large file. Check your connection and try again; if it repeats, try smaller PDFs.');
     }
   }
@@ -907,7 +937,7 @@
     b.textContent = deriv ? 'Run as updated version instead' : 'Run as derivative asset instead';
     b.onclick = () => {
       pendingOverride = { from: d.mode_used, to: deriv ? 'update' : 'derivative', stage: 'processing' };
-      cancelJob(); submitJob(deriv ? 'update' : 'derivative');
+      autoTries = 0; cancelJob(); submitJob(deriv ? 'update' : 'derivative');
     };
     box.hidden = false;
   }
@@ -1033,7 +1063,7 @@
     const deriv = lastMode === 'derivative';
     const b = document.getElementById('conf-rerun');
     b.textContent = deriv ? 'Re-run as updated version' : 'Re-run as derivative asset';
-    b.onclick = () => { pendingOverride = { from: lastMode, to: deriv ? 'update' : 'derivative', stage: 'review' }; resetForm(true); submitJob(deriv ? 'update' : 'derivative'); };
+    b.onclick = () => { pendingOverride = { from: lastMode, to: deriv ? 'update' : 'derivative', stage: 'review' }; resetForm(true); autoTries = 0; submitJob(deriv ? 'update' : 'derivative'); };
     box.hidden = false;
   }
   function showResults(results) {
