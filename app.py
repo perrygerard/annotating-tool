@@ -368,11 +368,12 @@ def download(job_id):
                      mimetype="application/pdf")
 
 
-def _effective_annots(all_annots, pdf_path, edits, new_boxes, overrides):
+def _effective_annots(all_annots, pdf_path, edits, new_boxes, overrides, rich=None):
     """The annotation list for this export: stored annotations (with any text edits, on copies so a later
     export can undo them) plus the boxes the user drew in the review page. New pins go into `overrides`
     so they are drawn exactly where they were placed."""
-    eff = [dataclasses.replace(a, content=edits[a.index]) if a.index in edits else a for a in all_annots]
+    rich = rich or {}
+    eff = [dataclasses.replace(a, content=edits[a.index], rich=rich.get(a.index, "")) if a.index in edits else a for a in all_annots]
     if not new_boxes:
         return eff
     doc = fitz.open(pdf_path)
@@ -407,7 +408,8 @@ def _effective_annots(all_annots, pdf_path, edits, new_boxes, overrides):
             sq.new_rect = fitz.Rect(box); sq.new_page_num = pn; sq.status = "moved"; sq.matched = True
             pin_rect = fitz.Rect(tx - 6, ty - 6, tx + 6, ty + 6)
             pin = AnnotationInfo(index=pi, page_num=pn, annot_type=(ANNOT_FREETEXT, "FreeText"), rect=pin_rect,
-                                 content=content, vertices=[(tx, ty), (tx + 30, ty - 20)], flags=0, colors={}, border={})
+                                 content=content, vertices=[(tx, ty), (tx + 30, ty - 20)], flags=0, colors={}, border={},
+                                 rich=str(nb.get("content_rich") or "")[:8000])
             pin.tip_point = fitz.Point(tx, ty)
             pin.new_rect = pin_rect; pin.new_vertices = [(tx, ty), (tx + 30, ty - 20)]
             pin.new_page_num = pn; pin.status = "moved"; pin.matched = True
@@ -507,6 +509,12 @@ def confirm(job_id):
         if f and str(k).lstrip("-").isdigit():
             boxes[int(k)] = tuple(f)
     # Edited reference text: { "<annotation index>": "text" }
+    rich_edits = {}
+    for k, v in (data.get("rich") or {}).items():
+        try:
+            rich_edits[int(k)] = str(v or "")[:8000]
+        except (TypeError, ValueError):
+            pass
     edits = {}
     for k, v in (data.get("edits") or {}).items():
         if str(k).lstrip("-").isdigit() and isinstance(v, str):
@@ -526,7 +534,7 @@ def confirm(job_id):
         return jsonify({"error": "Source PDF no longer available — please re-process"}), 500
 
     try:
-        eff = _effective_annots(all_annots, new_pdf_path, edits, new_boxes, overrides)
+        eff = _effective_annots(all_annots, new_pdf_path, edits, new_boxes, overrides, rich_edits)
         if page_moves:
             with fitz.open(new_pdf_path) as _d:
                 _n = len(_d)

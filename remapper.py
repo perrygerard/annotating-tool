@@ -55,6 +55,7 @@ class AnnotationInfo:
     font_size: float = 7.0     # FreeText font size from DA string
     popup_rect: Optional[fitz.Rect] = None
     open_state: bool = False
+    rich: str = ""             # content with <b><u><sup><sub> markup (empty when the text is plain)
     # Fingerprinting
     tip_point: Optional[fitz.Point] = None
     fingerprint_text: str = ""
@@ -1019,6 +1020,7 @@ def process_pdfs(old_pdf_path: str, new_pdf_path: str, output_path: str, progres
                 annot_type=atype,
                 rect=fitz.Rect(annot.rect),
                 content=annot_info_dict.get("content", ""),
+                rich=_read_rich(old_doc, annot.xref, annot_info_dict.get("content", "")),
                 vertices=vertices,
                 flags=annot.flags,
                 colors=colors,
@@ -1526,7 +1528,7 @@ def _finalize(results, all_annots, old_pdf_path, new_pdf_path, output_path, prog
                 "page": info.page_num + 1,
                 "type": info.annot_type[1],
                 "status": info.status,
-                "content": info.content,
+                "content": info.content, "rich": getattr(info, "rich", ""),
                 "author": info.author,
                 "confidence": f"{info.match_confidence:.0%}",
                 "method": info.match_method,
@@ -1883,6 +1885,100 @@ def _wrap_text_measured(text, max_w, fontsize):
     return lines
 
 
+# ── Rich reference text: a tiny markup (<b> <u> <sup> <sub>) the review screen writes ─────────────────
+_RICH_TOK = re.compile(r"(</?(?:b|u|sup|sub)>)|([^<]+|<)")
+
+
+def _plain_of(markup):
+    out = []
+    for m in _RICH_TOK.finditer(markup or ""):
+        if m.group(2):
+            out.append(m.group(2))
+    return _unesc("".join(out))
+
+
+def _unesc(t):
+    return t.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
+def _read_rich(doc, xref, content):
+    """The formatted version of an annotation's text, when a Carryover export stored one (and it still
+    matches the plain text, i.e. nobody edited the comment in Acrobat since)."""
+    try:
+        kind, val = doc.xref_get_key(xref, "CPRich")
+        if kind != "string" or not val:
+            return ""
+        if " ".join(_plain_of(val).split()) != " ".join((content or "").split()):
+            return ""
+        return val[:8000]
+    except Exception:
+        return ""
+
+
+def _rich_words(markup):
+    """[(word, flags)] with flags = set of 'b','u','sup','sub'; whitespace separates words, tags may split a word."""
+    flags, out, cur = set(), [], []
+    def flush():
+        if cur:
+            # a "word" is runs glued together without whitespace: [(text, frozenset)]
+            out.append(list(cur)); cur.clear()
+    for m in _RICH_TOK.finditer(markup or ""):
+        tag, txt = m.group(1), m.group(2)
+        if tag:
+            name = tag.strip("</>")
+            (flags.discard if tag.startswith("</") else flags.add)(name)
+            if name in ("sup", "sub") and not tag.startswith("</"):
+                flags.discard("sub" if name == "sup" else "sup")
+        else:
+            txt = _unesc(txt)
+            for part in re.split(r"(\s+)", txt):
+                if not part:
+                    continue
+                if part.isspace():
+                    flush()
+                else:
+                    cur.append((part, frozenset(flags)))
+    flush()
+    return out
+
+
+def _seg_font(flags):
+    return "hebo" if "b" in flags else "helv"
+
+
+def _seg_size(flags, fs):
+    return fs * 0.66 if ("sup" in flags or "sub" in flags) else fs
+
+
+def _wrap_rich(markup, max_w, fontsize):
+    """Word-wrap rich text. Returns lines; each line is a list of (text, flags, width)."""
+    lines, cur, cw = [], [], 0.0
+    space = fitz.get_text_length(" ", fontname="helv", fontsize=fontsize)
+    for word in _rich_words(markup):
+        segs = [(t, f, fitz.get_text_length(t, fontname=_seg_font(f), fontsize=_seg_size(f, fontsize))) for t, f in word]
+        ww = sum(w for _, _, w in segs)
+        if cur and cw + space + ww > max_w:
+            lines.append(cur); cur, cw = [], 0.0
+        if cur:
+            prev = cur[-1]
+            cur.append((" ", prev[1] & {"u"} and frozenset({"u"}) or frozenset(), space)); cw += space
+        cur.extend(segs); cw += ww
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _draw_rich_line(page, x, y, line, fontsize, color):
+    for t, f, w in line:
+        sz = _seg_size(f, fontsize)
+        yy = y - fontsize * 0.34 if "sup" in f else (y + fontsize * 0.16 if "sub" in f else y)
+        if t.strip():
+            page.insert_text(fitz.Point(x, yy), t, fontname=_seg_font(f), fontsize=sz, color=color)
+        if "u" in f and w > 0:
+            page.draw_line(fitz.Point(x, yy + sz * 0.14), fitz.Point(x + w, yy + sz * 0.14), color=color, width=max(0.4, sz * 0.06))
+        x += w
+
+
 def _draw_number_dot(page, cx, cy, number, radius=7, color=None):
     """Filled circle (black unless a colour is given) with centered white number at (cx, cy)."""
     c = color or (0, 0, 0)
@@ -1899,7 +1995,7 @@ CARRIER_SUBJECT = "CarryoverPin"
 _CARRIER_BOX = {}
 
 
-def _make_carrier(page, box, tip, content, author, line_to=None):
+def _make_carrier(page, box, tip, content, author, line_to=None, rich=""):
     """Hidden real annotation for one pin. line_to=None -> FreeText callout whose tip is `tip`;
     else a hidden arrow from `tip` to `line_to` (a 2nd target touching its callout's carrier)."""
     doc = page.parent
@@ -1923,6 +2019,8 @@ def _make_carrier(page, box, tip, content, author, line_to=None):
         ann.set_flags(fitz.PDF_ANNOT_IS_HIDDEN)
         ann.update()
         doc.xref_set_key(ann.xref, "CPBox", f"[{box.x0:.3f} {box.y0:.3f} {box.x1:.3f} {box.y1:.3f}]")
+        if rich:
+            doc.xref_set_key(ann.xref, "CPRich", fitz.get_pdf_str(rich))
         return ann
     except Exception:
         return None
@@ -1934,12 +2032,12 @@ def _add_carrier(page, info, cx, cy, px, py, r, pins_on_page, global_num, out_pa
     box = _pin_bbox(cx, cy, px, py, r)
     key = (id(page.parent), info.index)
     if info.parent_index is None:
-        _make_carrier(page, box, (px, py), info.content, info.author)
+        _make_carrier(page, box, (px, py), info.content, info.author, rich=getattr(info, "rich", ""))
         _CARRIER_BOX[key] = box
     else:
         pbox = _CARRIER_BOX.get((id(page.parent), info.parent_index))
         if pbox is not None:
-            _make_carrier(page, box, (px, py), info.content, info.author, (pbox.x0 + 1, pbox.y0 + 1))
+            _make_carrier(page, box, (px, py), info.content, info.author, (pbox.x0 + 1, pbox.y0 + 1), rich=getattr(info, "rich", ""))
 
 
 def strip_pin_text(doc):
@@ -1962,7 +2060,7 @@ def strip_pin_text(doc):
                 x0, y0, x1, y1 = [float(t) for t in re.findall(r'-?\d+(?:\.\d+)?', v)]
                 verts = list(a.vertices or [])
                 found.append((a.type[0], fitz.Rect(x0, y0, x1, y1), verts, a.info.get("content", ""),
-                              a.info.get("title", "")))
+                              a.info.get("title", ""), _read_rich(doc, a.xref, a.info.get("content", ""))))
             except Exception:
                 continue
         if not found:
@@ -1974,11 +2072,11 @@ def strip_pin_text(doc):
             page.add_redact_annot(fitz.Rect(box.x0 - 6, box.y0 - 6, box.x1 + 6, box.y1 + 6))  # MuPDF needs slack to treat the ring as covered
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE,
                                   graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
-        for t, box, verts, content, author in found:
+        for t, box, verts, content, author, rich in found:
             if t == 2 and verts:
-                _make_carrier(page, box, verts[0], content, author)
+                _make_carrier(page, box, verts[0], content, author, rich=rich)
             elif t == 3 and len(verts) >= 2:
-                _make_carrier(page, box, verts[0], content, author, verts[-1])
+                _make_carrier(page, box, verts[0], content, author, verts[-1], rich=rich)
 
 
 BOX_SUBJECT = "CarryoverBox"
@@ -2141,7 +2239,7 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
             total = HEADER_H + SIDEBAR_PAD
             wrapped = []
             for inf in annots_on_page:
-                lns = _wrap_text_measured(inf.content or "", text_w, font)
+                lns = _wrap_rich(inf.rich, text_w, font) if getattr(inf, "rich", "") else _wrap_text_measured(inf.content or "", text_w, font)
                 wrapped.append(lns)
                 total += max(DOT_R * 2, len(lns) * lead) + gap
             return wrapped, lead, gap, total
@@ -2184,9 +2282,12 @@ def write_pdf(all_annots, new_pdf_path, output_path, skip_indices=None,
 
             text_y = cursor_y + font
             for line in lns:
-                page.insert_text(fitz.Point(pw + text_x_off, text_y), line,
-                                 fontname="helv", fontsize=font,
-                                 color=(0.1, 0.1, 0.1))
+                if isinstance(line, str):
+                    page.insert_text(fitz.Point(pw + text_x_off, text_y), line,
+                                     fontname="helv", fontsize=font,
+                                     color=(0.1, 0.1, 0.1))
+                else:
+                    _draw_rich_line(page, pw + text_x_off, text_y, line, font, (0.1, 0.1, 0.1))
                 text_y += lead
 
         # ── Draw numbered dots on page content ──────────────────────────────

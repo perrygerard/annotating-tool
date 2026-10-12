@@ -567,7 +567,16 @@
 
     .dc-edit-label { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 0 5px; font-size: .68rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b; }
     .dc-edit-hint { font-weight: 500; letter-spacing: 0; text-transform: none; color: #94a3b8; }
-    .ann-item .dc-edit { background: #f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'/%3E%3C/svg%3E") no-repeat right 10px top 10px; border: none; border-radius: 8px; padding: 9px 32px 9px 12px; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); cursor: text; transition: box-shadow .12s; }
+    .ann-item .dc-edit { white-space: pre-wrap; word-break: break-word; min-height: 1.45em; overflow: visible; resize: none; background: #f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'/%3E%3C/svg%3E") no-repeat right 10px top 10px; border: none; border-radius: 8px; padding: 9px 32px 9px 12px; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 2px 0 rgb(15 23 42 / .05); cursor: text; transition: box-shadow .12s; }
+    .dc-edit[contenteditable]:empty::before { content: attr(data-placeholder); color: #94a3b8; pointer-events: none; }
+    .dc-edit b, .dc-edit strong { font-weight: 700; } .dc-edit sup, .dc-edit sub { font-size: .7em; line-height: 0; }
+    .fmt-bar { display: flex; gap: 2px; margin-right: auto; }
+    .fmt-btn { width: 30px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: #64748b; cursor: pointer; padding: 0; font: inherit; font-size: .84rem; line-height: 1; }
+    .fmt-btn:hover { background: #e2e8f0; color: #0f172a; }
+    .fmt-btn[aria-pressed="true"] { background: #e0e7ff; color: #3730a3; }
+    .fmt-btn:focus-visible { outline: 2px solid #4449F2; outline-offset: 1px; }
+    .fmt-btn sup, .fmt-btn sub { font-size: .6em; font-weight: 600; }
+    .more-row { align-items: center; }
     .ann-item .dc-edit:hover { box-shadow: 0 0 0 1px #94a3b8, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .ann-item .dc-edit:focus { box-shadow: 0 0 0 2px #0ea5e9; background-color: #f8fafc; }
     .ann-item .dc-edit:focus ~ *, .ann-item .dc-edit-label:has(+ .dc-edit:focus) .dc-edit-hint { color: #0ea5e9; }
@@ -1155,7 +1164,7 @@
     reviewedIndices = new Set();
     dotOverrides.clear(); pageMoves.clear();
     sideOverrides.clear();
-    boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0; offBoxes.clear(); boxesIncluded = false;
+    boxEdits.clear(); contentEdits.clear(); richEdits.clear(); newBoxSeq = 0; offBoxes.clear(); boxesIncluded = false;
     if (drawMode) setDrawMode(false);
     if (pinMode) setPinMode(false);
     histReset();
@@ -1778,7 +1787,7 @@
     const ta = it.querySelector('.dc-edit');
     const pgs = groupOf(Number(it.dataset.idx)).map(m => m.e.pg.new_page_num || m.e.pg.page_num);
     if (!q.pages.every(n => pgs.includes(n))) return false;
-    const hay = ((ta ? ta.value : e.ann.content) + ' #' + e.ann.number + ' ' + e.ann.number + ' ' + (e.ann.author || '')).toLowerCase();
+    const hay = ((ta ? edText(ta) : e.ann.content) + ' #' + e.ann.number + ' ' + e.ann.number + ' ' + (e.ann.author || '')).toLowerCase();
     return q.every(t => hay.includes(t));
   }
   (function () {
@@ -1833,9 +1842,15 @@
         <svg class="ann-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg>
       </button>
       <div class="ann-body" id="${bodyId}" hidden>
-        <textarea class="dc-edit" rows="1" aria-label="Reference text" placeholder="Type the reference for this spot…">${esc(a.content)}</textarea>
+        <div class="dc-edit" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Reference text" data-placeholder="Type the reference for this spot…" spellcheck="true">${richHtml(a)}</div>
         ${locRows}
         <div class="more-row">
+          <div class="fmt-bar" role="toolbar" aria-label="Text formatting">
+            <button type="button" class="fmt-btn" data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold" aria-pressed="false"><b>B</b></button>
+            <button type="button" class="fmt-btn" data-cmd="underline" title="Underline (Ctrl+U)" aria-label="Underline" aria-pressed="false"><u>U</u></button>
+            <button type="button" class="fmt-btn" data-cmd="superscript" title="Superscript" aria-label="Superscript" aria-pressed="false">x<sup>2</sup></button>
+            <button type="button" class="fmt-btn" data-cmd="subscript" title="Subscript" aria-label="Subscript" aria-pressed="false">x<sub>2</sub></button>
+          </div>
           <button type="button" class="more-btn" aria-haspopup="true" aria-expanded="false" aria-label="More options" title="More"><svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button>
           <div class="more-menu" role="menu" hidden>
             <div class="mm-sec swatches" role="group" aria-label="Pin color in the export"><span class="sw-lbl">Export color</span><div class="sw-row">${PIN_COLORS.map(c => `<button type="button" class="sw" data-c="${c[0]}" style="--c:${c[0]}" title="${c[1]}" aria-label="${c[1]}" aria-pressed="false"></button>`).join('')}</div></div>
@@ -1848,10 +1863,30 @@
         </div>
       </div>`;
     const ta = item.querySelector('.dc-edit');
-    const origText = a.content || '';
+    const origText = a.content || '', origRich = a.rich || '';
     ta.addEventListener('input', () => {
-      a.content = ta.value; autosize(ta);
-      if (!a.isNew) { if (ta.value === origText) contentEdits.delete(a.index); else contentEdits.set(a.index, ta.value); updateConfirmButton(); }
+      const ser = serializeRich(ta);
+      a.content = ser.plain; a.rich = ser.rich;
+      if (!a.isNew) {
+        if (ser.plain === origText && ser.rich === origRich) { contentEdits.delete(a.index); richEdits.delete(a.index); }
+        else { contentEdits.set(a.index, ser.plain); richEdits.set(a.index, ser.rich); }
+        updateConfirmButton();
+      }
+    });
+    ta.addEventListener('paste', ev => {                      // plain text only: pasted styling would sneak in unsupported formatting
+      ev.preventDefault();
+      const t = (ev.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, t);
+    });
+    item.querySelectorAll('.fmt-btn').forEach(b => {
+      b.addEventListener('mousedown', ev => ev.preventDefault());       // keep the selection in the text
+      b.addEventListener('click', () => {
+        if (document.activeElement !== ta) ta.focus();
+        document.execCommand('styleWithCSS', false, false);
+        document.execCommand(b.dataset.cmd, false, null);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        syncFmtButtons();
+      });
     });
     item.querySelector('.ann-head').addEventListener('click', () => toggleItem(idx));
     const psel = item.querySelector('.pg-sel');
@@ -2300,7 +2335,63 @@
     updateConfirmButton();
   }
 
-  function autosize(ta) { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
+  // ── Rich reference text (bold / underline / superscript / subscript) ───────────────────────────────
+  const richEdits = new Map();     // annotation .index -> edited text with <b><u><sup><sub> markup
+  function escH(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function richHtml(a) {           // markup (or plain text) -> editor HTML
+    if (a.rich) return a.rich.replace(/\n/g, '<br>');
+    return escH(a.content || '').replace(/\n/g, '<br>');
+  }
+  function serializeRich(root) {   // editor DOM -> { plain, rich }
+    let plain = '', rich = '', any = false;
+    const open = [], BLOCK = /^(DIV|P|LI)$/;
+    function tagsFor(el) {
+      const t = [], st = el.style || {};
+      const n = el.nodeName;
+      if (n === 'B' || n === 'STRONG' || /^(bold|[6-9]00)$/.test(st.fontWeight || '')) t.push('b');
+      if (n === 'U' || /underline/.test(st.textDecoration || '')) t.push('u');
+      if (n === 'SUP' || st.verticalAlign === 'super') t.push('sup');
+      if (n === 'SUB' || st.verticalAlign === 'sub') t.push('sub');
+      return t;
+    }
+    function nl() { if (plain.length && !plain.endsWith('\n')) { plain += '\n'; rich += '\n'; } }
+    function walk(node, first) {
+      node.childNodes.forEach((c, i) => {
+        if (c.nodeType === 3) {
+          const v = c.nodeValue.replace(/\u00a0/g, ' ');
+          if (!v) return;
+          plain += v; rich += escH(v);
+        } else if (c.nodeType === 1) {
+          if (c.nodeName === 'BR') { plain += '\n'; rich += '\n'; return; }
+          const isBlock = BLOCK.test(c.nodeName);
+          if (isBlock) nl();
+          const t = tagsFor(c);
+          if (t.length) any = true;
+          rich += t.map(x => '<' + x + '>').join('');
+          walk(c);
+          rich += t.slice().reverse().map(x => '</' + x + '>').join('');
+          if (isBlock) nl();
+        }
+      });
+    }
+    walk(root, true);
+    plain = plain.replace(/\n+$/, ''); rich = rich.replace(/\n+$/, '');
+    return { plain, rich: any ? rich : '' };
+  }
+  function syncFmtButtons() {
+    const sel = window.getSelection(); const ed = sel && sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode);
+    const host = ed && ed.closest && ed.closest('.dc-edit');
+    document.querySelectorAll('.fmt-btn[aria-pressed="true"]').forEach(b => { if (!host || !b.closest('.ann-item').contains(host)) b.setAttribute('aria-pressed', 'false'); });
+    if (!host) return;
+    host.closest('.ann-item').querySelectorAll('.fmt-btn').forEach(b => {
+      let on = false; try { on = document.queryCommandState(b.dataset.cmd); } catch (e) {}
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  document.addEventListener('selectionchange', syncFmtButtons);
+  function edText(el) { return el.matches('.dc-edit') ? serializeRich(el).plain : (el.value || ''); }
+
+  function autosize(ta) { if (ta.isContentEditable) return; ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
 
 
   // ── Moving a pin to another page ───────────────────────────────────────────
@@ -2472,7 +2563,7 @@
          box: [e.ann.x, e.ann.y, e.ann.w, e.ann.h], pin: null, content: '' }));
     reg.filter(e => e.ann.isNew && e.ann.pinOnly && !deletedIndices.has(e.ann.index)).forEach(e =>
       out.push({ index: e.ann.index, pin_index: e.ann.index, page: e.pg.new_page_num || e.pg.page_num,
-                 box: null, pin: [e.ann.num_x, e.ann.num_y], content: e.ann.content || '' }));
+                 box: null, pin: [e.ann.num_x, e.ann.num_y], content: e.ann.content || '', content_rich: e.ann.rich || '' }));
     return out;
   }
 
@@ -2597,7 +2688,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ deleted_indices: allDeleted(), positions: Object.fromEntries(dotOverrides), pages: Object.fromEntries([...pageMoves].filter(([k]) => !(window._annRegistry || []).some(e => e.ann.index === k && e.ann.isNew))), sides: Object.fromEntries(sideOverrides),
-          boxes: Object.fromEntries(boxEdits), edits: Object.fromEntries(contentEdits), new_boxes: newBoxPayload(), colors: colorPayload(), tracking: buildTracking() })
+          boxes: Object.fromEntries(boxEdits), edits: Object.fromEntries(contentEdits), rich: Object.fromEntries(richEdits), new_boxes: newBoxPayload(), colors: colorPayload(), tracking: buildTracking() })
         });
         if (!res.ok) {
           const d = await res.json().catch(() => ({}));
@@ -2815,7 +2906,7 @@
     reviewedIndices = new Set();
     dotOverrides.clear();
     sideOverrides.clear();
-    boxEdits.clear(); contentEdits.clear(); newBoxSeq = 0; offBoxes.clear(); boxesIncluded = false;
+    boxEdits.clear(); contentEdits.clear(); richEdits.clear(); newBoxSeq = 0; offBoxes.clear(); boxesIncluded = false;
     if (drawMode) setDrawMode(false);
     if (pinMode) setPinMode(false);
     histReset();
