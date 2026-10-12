@@ -685,6 +685,9 @@
     .tb-pop .tb-check[hidden] { display: none; }
     .tb-pop .box-ico { stroke: currentColor; fill: none; stroke-width: 1.7; }
     @media (max-width: 480px) { #toolbar { position: static !important; flex-wrap: wrap; pointer-events: auto; } }
+    /* sidebar: same shadow recipe as the capsules, with room so the window edge doesn't clip it */
+    .results-layout .detail-panel { margin: 12px 18px 26px 0 !important; box-shadow: 0 0 0 .5px rgba(15,23,42,.07), 0 1px 1px rgba(15,23,42,.04), 0 8px 22px rgba(15,23,42,.10) !important; }
+    @media (max-width: 480px) { .results-layout .detail-panel { margin: 12px 12px 26px !important; } }
   </style>
 </head>
 <body>
