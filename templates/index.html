@@ -426,6 +426,8 @@
     .ref-search .rs-clear:hover { background: #f1f5f9; }
     .ref-none { margin: 12px 2px; font-size: .82rem; color: #64748b; }
     .conf-card { margin: 0 0 20px; padding: 4px 2px 20px; border-radius: 0; background: transparent; box-shadow: none; border-bottom: 1px solid #e2e8f0; }
+    .conf-card.deriv .conf-top { display: none; }
+    .conf-card.deriv .conf-rerun { margin-top: 0; }
     .conf-top { display: flex; align-items: baseline; gap: 8px; }
     .conf-pct { font-size: 1.7rem; font-weight: 700; letter-spacing: -.03em; color: #0f172a; font-variant-numeric: tabular-nums; }
     .conf-lbl { font-size: .78rem; font-weight: 600; color: #64748b; }
@@ -504,6 +506,8 @@
     .toolbar .zoom-group .cl-btn.icon:hover:not(:disabled) { background: #f8fafc; }
     .toolbar .cl-btn:not(.icon):not(.zoom-val) { height: 34px; padding: 0 14px 0 12px; gap: 8px; border-radius: 8px; }
     .toolbar .cl-btn:not(.icon):not(.zoom-val):not(.tb-box):not(.tb-add) svg { color: #475569; }
+    .toolbar #undo-btn, .toolbar #redo-btn, .toolbar .tb-check { box-shadow: none; background: transparent; }
+    .toolbar #undo-btn:hover:not(:disabled), .toolbar #redo-btn:hover:not(:disabled), .toolbar .tb-check:hover { background: #f1f5f9; }
     .toolbar .tb-add.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1px #0f172a, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .toolbar .tb-box.on { background: #0f172a; color: #fff; box-shadow: 0 0 0 1px #0f172a, 0 1px 2px 0 rgb(15 23 42 / .05); }
     .toolbar .tb-box.on .box-ico { stroke: #fff; fill: rgb(255 255 255 / .12); }
@@ -1767,7 +1771,7 @@
       if (it.dataset.bucket === 'moved') solid++; else look++;
     });
     if (!items.length) { card.hidden = true; return; }
-    card.hidden = false;
+    card.hidden = false; card.classList.toggle('deriv', !!isDeriv);
     const pct = n ? Math.round(100 * sum / n) : 0;
     document.getElementById('conf-pct').textContent = pct + '%';
     document.getElementById('conf-bar-fill').style.width = pct + '%';
