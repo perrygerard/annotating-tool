@@ -395,6 +395,27 @@
     .ref-filter { width: 100%; box-sizing: border-box; margin: 0 0 18px; padding: 9px 32px 9px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7.5l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 12px center; -webkit-appearance: none; appearance: none; font: inherit; font-size: .82rem; font-weight: 600; color: #0f172a; cursor: pointer; }
     .more-menu .pg-sel { background-color: #f8fafc; }
     .ref-filter:focus { outline: none; border-color: #4449F2; box-shadow: 0 0 0 3px rgba(68,73,242,.15); }
+    /* Custom dropdown (replaces the browser's native list) */
+    select.cs-native { display: none; }
+    .cs { position: relative; min-width: 0; }
+    .cs-filter { margin: 0 0 18px; }
+    .cs-page { flex: 1; }
+    .cs-btn { width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 8px; text-align: left; padding: 9px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; font: inherit; font-size: .82rem; font-weight: 600; color: #0f172a; cursor: pointer; }
+    .cs-page .cs-btn { padding: 7px 10px; }
+    .cs-btn:hover { border-color: #cbd5e1; }
+    .cs-btn:focus-visible, .cs-btn[aria-expanded="true"] { outline: none; border-color: #4449F2; box-shadow: 0 0 0 3px rgba(68,73,242,.15); }
+    .cs-btn .cs-val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cs-btn .cs-chev { flex: 0 0 auto; color: #64748b; transition: transform .15s; }
+    .cs-btn[aria-expanded="true"] .cs-chev { transform: rotate(180deg); }
+    .cs-list { position: fixed; z-index: 1100; box-sizing: border-box; max-height: 260px; overflow-y: auto; background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px #e2e8f0, 0 10px 24px rgb(15 23 42 / .16); padding: 4px; margin: 0; list-style: none; }
+    .cs-list[hidden] { display: none; }
+    .cs-opt { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 7px; font-size: .8rem; font-weight: 600; color: #334155; cursor: pointer; }
+    .cs-opt .cs-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; flex: 0 0 auto; }
+    .cs-opt .cs-dot.d-all { background: var(--ink); } .cs-opt .cs-dot.d-moved { background: var(--success); } .cs-opt .cs-dot.d-review { background: var(--warn); } .cs-opt .cs-dot.d-removed { background: var(--removed); }
+    .cs-opt .cs-txt { flex: 1; min-width: 0; }
+    .cs-opt .cs-check { width: 14px; height: 14px; color: #4449F2; visibility: hidden; flex: 0 0 auto; }
+    .cs-opt[aria-selected="true"] .cs-check { visibility: visible; }
+    .cs-opt:hover, .cs-opt.cs-active { background: #f1f5f9; }
     .ref-search { position: relative; margin: 0 0 10px; }
     .ref-search input { width: 100%; box-sizing: border-box; padding: 9px 32px 9px 34px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; font: inherit; font-size: .82rem; color: #0f172a; }
     .ref-search input::-webkit-search-cancel-button, .ref-search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
@@ -1777,6 +1798,7 @@
     document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { btn._pinned = false; show(false); } });
   })();
   function setFilter(f) { activeFilter = f; updateFilters(); }
+  enhanceSelect(document.getElementById('ref-filter'), 'filter');
   document.getElementById('ref-filter').addEventListener('change', e => setFilter(e.target.value));
   const RANK = { needs_look: 4, content_removed: 3, moved: 2, reviewed: 1, deleted: 0 };
   function memberState(e) {
@@ -1843,6 +1865,7 @@
       selectAnnotation(idx);
     });
     fillPageSelect(psel, idx);
+    enhanceSelect(psel, 'page');
     item.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => setPinColor(idx, b.dataset.c)));
     item.querySelector('.act-remove').addEventListener('click', () => { closeMoreMenus(); toggleDelete(idx, a.index); });
     item.querySelector('.act-reset').addEventListener('click', () => { closeMoreMenus(); resetPosition(idx); });
@@ -1858,6 +1881,77 @@
     return item;
   }
 
+  // ── Custom dropdowns: the native <select> stays as the source of truth (hidden); a styled button + list sits on top
+  let openCS = null;
+  function closeCS() {
+    if (!openCS) return;
+    openCS.list.hidden = true; openCS.btn.setAttribute('aria-expanded', 'false');
+    if (openCS.list.parentNode) openCS.list.parentNode.removeChild(openCS.list);
+    openCS = null;
+  }
+  function enhanceSelect(sel, kind) {
+    if (sel._cs) return;
+    const wrap = document.createElement('div'); wrap.className = 'cs cs-' + kind;
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'cs-btn';
+    btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', sel.getAttribute('aria-label') || '');
+    btn.innerHTML = '<span class="cs-val"></span><svg class="cs-chev" width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg>';
+    if (sel.id) btn.id = sel.id + '-btn';
+    sel.classList.add('cs-native'); sel.tabIndex = -1; sel.setAttribute('aria-hidden', 'true');
+    sel.parentNode.insertBefore(wrap, sel); wrap.appendChild(btn); wrap.appendChild(sel);
+    const label = () => { const o = sel.options[sel.selectedIndex]; btn.querySelector('.cs-val').textContent = o ? o.textContent : ''; };
+    new MutationObserver(label).observe(sel, { childList: true, subtree: true, characterData: true, attributes: true });
+    label();
+    const list = document.createElement('ul'); list.className = 'cs-list'; list.setAttribute('role', 'listbox'); list.hidden = true;
+    const CHECK = '<svg class="cs-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>';
+    const opts = () => [...list.querySelectorAll('.cs-opt')];
+    function setActive(i) {
+      const o = opts(); if (!o.length) return;
+      i = Math.max(0, Math.min(o.length - 1, i));
+      o.forEach((el, k) => el.classList.toggle('cs-active', k === i));
+      o[i].scrollIntoView({ block: 'nearest' });
+    }
+    function choose(v) {
+      closeCS(); btn.focus();
+      if (sel.value !== v) { sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+      label();
+    }
+    function open() {
+      closeCS(); label();
+      list.innerHTML = [...sel.options].filter(o => !o.hidden).map(o =>
+        `<li class="cs-opt" role="option" data-v="${esc(o.value)}" aria-selected="${o.value === sel.value}">${kind === 'filter' ? `<span class="cs-dot d-${esc(o.value)}"></span>` : ''}<span class="cs-txt">${esc(o.textContent)}</span>${CHECK}</li>`).join('');
+      list.hidden = false; document.body.appendChild(list);
+      const r = btn.getBoundingClientRect();
+      list.style.minWidth = r.width + 'px';
+      const lh = list.offsetHeight, below = window.innerHeight - r.bottom;
+      const top = (below >= lh + 8 || r.top < lh + 8) ? r.bottom + 4 : r.top - lh - 4;
+      list.style.top = Math.max(8, Math.min(top, window.innerHeight - lh - 8)) + 'px';
+      list.style.left = Math.max(8, Math.min(r.left, window.innerWidth - list.offsetWidth - 8)) + 'px';
+      btn.setAttribute('aria-expanded', 'true'); openCS = { btn, list };
+      const cur = opts().findIndex(el => el.getAttribute('aria-selected') === 'true'); setActive(cur < 0 ? 0 : cur);
+    }
+    btn.addEventListener('click', ev => { ev.stopPropagation(); if (openCS && openCS.btn === btn) closeCS(); else open(); });
+    btn.addEventListener('keydown', ev => {
+      const isOpen = openCS && openCS.btn === btn;
+      if (!isOpen && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) { ev.preventDefault(); open(); return; }
+      if (!isOpen) return;
+      const o = opts(), i = o.findIndex(el => el.classList.contains('cs-active'));
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); setActive(i + 1); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); setActive(i - 1); }
+      else if (ev.key === 'Home') { ev.preventDefault(); setActive(0); }
+      else if (ev.key === 'End') { ev.preventDefault(); setActive(o.length - 1); }
+      else if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); if (o[i]) choose(o[i].dataset.v); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeCS(); }
+      else if (ev.key === 'Tab') closeCS();
+    });
+    list.addEventListener('click', ev => { ev.stopPropagation(); const li = ev.target.closest('.cs-opt'); if (li) choose(li.dataset.v); });
+    list.addEventListener('mousemove', ev => { const li = ev.target.closest('.cs-opt'); if (li) opts().forEach(el => el.classList.toggle('cs-active', el === li)); });
+    sel._cs = { btn, label };
+  }
+  document.addEventListener('click', closeCS);
+  window.addEventListener('resize', closeCS);
+  document.addEventListener('scroll', ev => { if (!(ev.target && ev.target.nodeType === 1 && ev.target.closest('.cs-list'))) closeCS(); }, true);
+
   function closeMoreMenus() {
     document.querySelectorAll('.more-menu').forEach(m => { if (!m.hidden) { m.hidden = true; const b = m.parentNode.querySelector('.more-btn'); if (b) b.setAttribute('aria-expanded', 'false'); } });
   }
@@ -1869,9 +1963,9 @@
     menu.style.left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8)) + 'px';
   }
   document.addEventListener('click', closeMoreMenus);
-  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeMoreMenus(); });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !ev.defaultPrevented) closeMoreMenus(); });
   window.addEventListener('resize', closeMoreMenus);
-  document.addEventListener('scroll', closeMoreMenus, true);
+  document.addEventListener('scroll', ev => { if (!(ev.target && ev.target.nodeType === 1 && ev.target.closest('.cs-list'))) closeMoreMenus(); }, true);
 
   // Sync badge + button labels with the item's state (removed / reviewed / matcher status)
   function fillPageSelect(sel, idx) {
