@@ -662,6 +662,29 @@
     /* sidebar sits right under the header, full height */
     .results-layout .detail-panel { align-self: stretch; margin: 12px 12px 12px 0; }
     @media (max-width: 480px) { .main-col { flex: none; } .results-layout .detail-panel { margin: 12px; } }
+
+    /* ===== v2: floating capsules (no toolbar background), Add menu, ⋯ menu ===== */
+    .main-col { position: relative; }
+    #toolbar { position: absolute !important; top: 0; left: 0; right: 14px; z-index: 20; background: transparent !important; pointer-events: none; padding: 12px 20px 0 !important; flex-wrap: nowrap; }
+    #toolbar .cap, #toolbar .tb-pop { pointer-events: auto; }
+    html[data-theme="tailwind"] .main-col .pages-panel { padding-top: 76px; }
+    .tb-menuwrap { position: relative; display: flex; }
+    .cap .tb-addmenu { width: auto !important; height: 34px !important; gap: 7px; padding: 0 12px 0 14px !important; }
+    .cap .tb-addmenu .add-caret { width: 14px; height: 14px; opacity: .65; }
+    .cap .tb-addmenu.on { background: rgba(68,73,242,.12) !important; color: #4449F2 !important; }
+    .cap .tb-dots { width: 40px !important; height: 34px !important; padding: 0 !important; justify-content: center; }
+    .tb-pop { min-width: 230px; }
+    .tb-pop .mm-actions { padding: 4px; gap: 1px; }
+    .tb-pop .tb-mi { display: flex; align-items: center; gap: 10px; width: 100%; }
+    .tb-pop .tb-mi svg { flex: none; color: #475569; }
+    .tb-pop .tb-mi[aria-pressed="true"] { background: rgba(68,73,242,.1); color: #4449F2; }
+    .tb-pop .tb-mi:disabled { opacity: .45; cursor: default; }
+    .tb-pop .tb-check { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; box-sizing: border-box; height: auto; box-shadow: none; background: transparent; border-radius: 7px; padding: 8px 10px; cursor: pointer; font-size: .8rem; font-weight: 600; color: #334155; }
+    .tb-pop .tb-check:hover { background: #f1f5f9; }
+    .tb-pop > .menu-item { margin: 0 4px 4px; border-top: 1px solid #eef2f7; border-radius: 0 0 7px 7px; padding-top: 10px; }
+    .tb-pop .tb-check[hidden] { display: none; }
+    .tb-pop .box-ico { stroke: currentColor; fill: none; stroke-width: 1.7; }
+    @media (max-width: 480px) { #toolbar { position: static !important; flex-wrap: wrap; pointer-events: auto; } }
   </style>
 </head>
 <body>
@@ -739,23 +762,20 @@
   <div class="main-col">
   <div class="toolbar" id="toolbar" role="toolbar" aria-label="Review actions">
     <div class="tb-group">
-      <div class="cap"><button type="button" class="cl-btn tb-add" data-act="add-pin" id="add-btn" aria-pressed="false" disabled title="Click on the Updated page to drop a new pin (Esc to stop)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add annotation</button></div>
-      <div class="cap"><div class="tb-split">
-      <button type="button" class="cl-btn tb-box" data-act="draw-box" id="draw-btn" aria-pressed="false" disabled title="Drag a box around text or artwork on the updated page (Esc to stop)">
-        <svg class="box-ico" width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><rect x="1.25" y="1.25" width="15.5" height="11.5" rx="2.5"/></svg>Box</button>
-        <button type="button" class="cl-btn tb-caret" style="position:relative" id="box-menu-btn" aria-haspopup="true" aria-expanded="false" disabled title="Box options"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg></button>
-        <div class="tb-menu" id="box-menu" role="group" aria-label="Box options" hidden>
-          <label class="menu-item"><input type="checkbox" id="box-incl-cb"><span id="box-incl-text">Include boxes from the original</span></label>
+      <div class="tb-menuwrap">
+        <div class="cap"><button type="button" class="cl-btn more-btn tb-addmenu" id="add-menu-btn" aria-haspopup="true" aria-expanded="false" disabled title="Add an annotation or a box"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span id="add-menu-lbl">Add</span><svg class="add-caret" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg></button></div>
+        <div class="more-menu tb-pop" id="add-menu" role="menu" hidden>
+          <div class="mm-actions">
+            <button type="button" class="mm-item tb-mi" role="menuitem" data-act="add-pin" id="add-btn" aria-pressed="false" disabled title="Click on the Updated page to drop a new pin (Esc to stop)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0113 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg><span>Annotation</span></button>
+            <button type="button" class="mm-item tb-mi" role="menuitem" data-act="draw-box" id="draw-btn" aria-pressed="false" disabled title="Drag a box around text or artwork on the updated page (Esc to stop)"><svg class="box-ico" width="18" height="14" viewBox="0 0 18 14" aria-hidden="true"><rect x="1.25" y="1.25" width="15.5" height="11.5" rx="2.5"/></svg><span>Box</span></button>
+          </div>
         </div>
-      </div></div>
-      <div class="cap" id="conf-colors"><label class="conf-switch tb-check" title="Preview the pin colors that will be in the exported PDF"><input type="checkbox" id="conf-colors-cb" role="switch"><span>Show export pin colors</span></label></div>
+      </div>
     </div>
     <div class="tb-group tb-right">
-      <div class="cap"><button type="button" class="cl-btn" data-act="toggle-orig" id="orig-btn" disabled title="Show or hide the original pages"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span id="orig-btn-lbl">Hide original</span></button></div>
       <div class="cap"><button type="button" class="cl-btn" data-act="undo" id="undo-btn" disabled title="Undo (Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
       <span class="tb-sep" aria-hidden="true"></span>
       <button type="button" class="cl-btn" data-act="redo" id="redo-btn" disabled title="Redo (Shift+Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>Redo</button></div>
-      
       <div class="cap"><div class="zoom-group" role="group" aria-label="Zoom the pages">
         <button type="button" class="cl-btn icon" data-act="zoom-out" aria-label="Zoom out" title="Zoom out" disabled>
           <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
@@ -763,6 +783,16 @@
         <button type="button" class="cl-btn icon" data-act="zoom-in" aria-label="Zoom in" title="Zoom in" disabled>
           <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h9M6 1.5v9" stroke="currentColor" stroke-width="1.6" stroke-linecap="butt" fill="none"/></svg></button>
       </div></div>
+      <div class="tb-menuwrap">
+        <div class="cap"><button type="button" class="cl-btn more-btn tb-dots" id="tb-more-btn" aria-haspopup="true" aria-expanded="false" aria-label="More options" disabled title="More"><svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button></div>
+        <div class="more-menu tb-pop" id="tb-more-menu" role="menu" hidden>
+          <div class="mm-actions">
+            <div id="conf-colors"><label class="conf-switch tb-check mm-item" title="Preview the pin colors that will be in the exported PDF"><span>Show export pin colors</span><input type="checkbox" id="conf-colors-cb" role="switch"></label></div>
+            <label class="conf-switch tb-check mm-item" id="box-incl-row" hidden><span id="box-incl-text">Include boxes from the original</span><input type="checkbox" id="box-incl-cb" role="switch"></label>
+            <button type="button" class="mm-item tb-mi" role="menuitem" data-act="toggle-orig" id="orig-btn" disabled title="Show or hide the original pages"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span id="orig-btn-lbl">Hide original</span></button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2243,14 +2273,11 @@
       if (e.newRectEl) e.newRectEl.style.display = off ? 'none' : '';
     });
     const list = carriedBoxes().filter(e => e.ann.placed !== false);
-    const n = list.length, caret = document.getElementById('box-menu-btn');
-    caret.hidden = !n; caret.disabled = !document.body.classList.contains('has-results');
-    caret.parentNode.classList.toggle('no-menu', !n);
+    const n = list.length;
+    document.getElementById('box-incl-row').hidden = !n;
     document.getElementById('box-incl-cb').checked = boxesIncluded;
     document.getElementById('box-incl-cb').disabled = !n;
     document.getElementById('box-incl-text').textContent = n ? `Include ${n} box${n === 1 ? '' : 'es'} from the original` : 'No boxes in the original';
-    caret.title = boxesIncluded ? `Box options (${n} from the original included)` : 'Box options';
-    caret.classList.toggle('has-incl', boxesIncluded && n > 0);
   }
   function initBoxes() {
     offBoxes.clear(); boxesIncluded = false;
@@ -2263,13 +2290,19 @@
     applyBoxes(); updateConfirmButton();
   }
   document.getElementById('box-incl-cb').addEventListener('change', ev => setBoxesIncluded(ev.target.checked));
-  (function boxMenu() {
-    const btn = document.getElementById('box-menu-btn'), menu = document.getElementById('box-menu');
-    const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
-    btn.addEventListener('click', ev => { ev.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute('aria-expanded', String(!menu.hidden)); });
-    document.addEventListener('click', ev => { if (!menu.hidden && !menu.contains(ev.target)) close(); });
-    document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !menu.hidden) close(); });
+  (function toolbarMenus() {
+    [['add-menu-btn', 'add-menu'], ['tb-more-btn', 'tb-more-menu']].forEach(([b, m]) => {
+      const btn = document.getElementById(b), menu = document.getElementById(m);
+      btn.addEventListener('click', ev => { ev.stopPropagation(); const was = !menu.hidden; closeMoreMenus(); if (!was) { openMoreMenu(btn, menu); if (m === 'add-menu') menu.style.left = Math.max(8, btn.closest('.cap').getBoundingClientRect().left) + 'px'; } });
+    });
+    document.querySelectorAll('#box-incl-row, #conf-colors').forEach(el => el.addEventListener('click', ev => ev.stopPropagation()));
   })();
+  function syncAddBtn() {
+    const b = document.getElementById('add-menu-btn'); if (!b) return;
+    const on = pinMode || drawMode;
+    b.classList.toggle('on', on);
+    document.getElementById('add-menu-lbl').textContent = pinMode ? 'Adding annotation' : drawMode ? 'Drawing box' : 'Add';
+  }
   const allDeleted = () => [...new Set([...deletedIndices, ...offBoxes])];
 
   function renumber(silent) {
@@ -2330,6 +2363,7 @@
     panel.classList.toggle('drawing', on || pinMode);
     const b = document.getElementById('draw-btn');
     if (b) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    syncAddBtn();
     const t = document.getElementById('toast');
     if (on) toast('Drag on the Updated page to box text or artwork. It snaps to the content. Esc to stop.');
     else if (t && t.textContent.startsWith('Drag on the Updated')) t.classList.remove('show');
@@ -2822,6 +2856,7 @@
     panel.classList.toggle('drawing', on || drawMode);
     const b = document.getElementById('add-btn');
     if (b) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    syncAddBtn();
     const tt = document.getElementById('toast');
     if (on) toast('Click on the Updated page to drop a pin, then type its reference. Esc to stop.');
     else if (tt && tt.textContent.startsWith('Click on the Updated')) tt.classList.remove('show');
