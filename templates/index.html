@@ -688,6 +688,67 @@
     /* sidebar: same shadow recipe as the capsules, with room so the window edge doesn't clip it */
     .results-layout .detail-panel { margin: 12px 18px 26px 0 !important; box-shadow: 0 0 0 .5px rgba(15,23,42,.07), 0 1px 1px rgba(15,23,42,.04), 0 8px 22px rgba(15,23,42,.10) !important; }
     @media (max-width: 480px) { .results-layout .detail-panel { margin: 12px 12px 26px !important; } }
+
+    /* ===================== Tahoe pass: glass surfaces, concentric radii, hairlines ===================== */
+    :root { --glass: rgba(255,255,255,.78); --glass-strong: rgba(255,255,255,.86); --hair: rgba(15,23,42,.08); --fill: rgba(15,23,42,.045); --fill-hover: rgba(15,23,42,.075);
+            --tint: rgba(68,73,242,.10); --lift: 0 0 0 .5px rgba(15,23,42,.07), 0 1px 1px rgba(15,23,42,.04), 0 8px 22px rgba(15,23,42,.10); }
+    /* header floats over the pages */
+    body.has-results header { position: fixed; top: 0; left: 0; right: 0; z-index: 40; background: rgba(248,250,252,.72) !important; -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); border-bottom: .5px solid var(--hair); }
+    body.has-results #results-screen.visible { top: 0; }
+    body.has-results .main-col .pages-panel { padding-top: 132px !important; }
+    body.has-results #toolbar { top: 56px; }
+    body.has-results .results-layout .detail-panel { margin-top: 68px !important; }
+    @media (max-width: 480px) { body.has-results header { position: relative; } body.has-results #results-screen.visible { top: 56px; } body.has-results .main-col .pages-panel { padding-top: 16px !important; } body.has-results #toolbar { top: 0; } body.has-results .results-layout .detail-panel { margin-top: 12px !important; } }
+    /* sidebar = glass sheet; radius 26 with 14 padding => 12 inner */
+    html[data-theme="tailwind"] .results-layout .detail-panel { background: rgba(255,255,255,.92); border-radius: 26px; box-shadow: var(--lift), inset 0 1px 0 rgba(255,255,255,.95) !important; }
+    /* inputs: capsule wells */
+    .ref-search input, .cs-btn { border: 0 !important; border-radius: 999px !important; background: var(--fill) !important; box-shadow: none !important; }
+    .ref-search input:hover, .cs-btn:hover { background: var(--fill-hover) !important; }
+    .ref-search input:focus, .cs-btn:focus-visible, .cs-btn[aria-expanded="true"] { background: #fff !important; box-shadow: 0 0 0 .5px rgba(68,73,242,.55), 0 0 0 4px rgba(68,73,242,.16) !important; }
+    .ref-search .rs-clear { border-radius: 999px; }
+    .filter-row, .conf-card { border-bottom-color: var(--hair) !important; }
+    /* reference rows: soft fills, no outlines */
+    html[data-theme="tailwind"] .ann-item { border: 0; border-radius: 16px; background: var(--fill); box-shadow: none; margin-bottom: 6px; transition: background .15s, box-shadow .15s; }
+    html[data-theme="tailwind"] .ann-item:hover { background: var(--fill-hover); box-shadow: none; }
+    html[data-theme="tailwind"] .ann-item.open { background: #fff; box-shadow: 0 0 0 .5px rgba(68,73,242,.45), 0 0 0 4px rgba(68,73,242,.09), 0 10px 24px -8px rgba(68,73,242,.22); }
+    .ann-head { padding: 10px 12px; }
+    .ann-head:focus-visible { border-radius: 16px; }
+    html[data-theme="tailwind"] .badge { box-shadow: none !important; padding: 3px 10px; }
+    /* expanded reference */
+    .ann-body { padding: 2px 12px 12px; }
+    .ann-body .dc-edit, .dc-edit { border: 0 !important; border-radius: 12px !important; background: var(--fill) !important; padding: 9px 12px !important; transition: background .12s, box-shadow .12s; }
+    .dc-edit:hover { background: var(--fill-hover) !important; }
+    .dc-edit:focus { background: #fff !important; box-shadow: 0 0 0 .5px rgba(68,73,242,.55), 0 0 0 4px rgba(68,73,242,.14) !important; }
+    html[data-theme="tailwind"] .ann-body .dc-content { border-radius: 12px; box-shadow: none; background: var(--fill); }
+    .fmt-bar { background: var(--fill); border-radius: 999px; padding: 2px; gap: 1px; margin-right: auto; }
+    .fmt-btn { width: 30px; height: 26px; border-radius: 999px; color: #334155; }
+    .fmt-btn:hover { background: var(--fill-hover); color: #0f172a; }
+    .fmt-btn[aria-pressed="true"] { background: #fff; color: #4449F2; box-shadow: 0 0 0 .5px rgba(15,23,42,.08), 0 1px 3px rgba(15,23,42,.14); }
+    .more-btn { border-radius: 999px; }
+    .more-btn:hover, .more-btn[aria-expanded="true"] { background: var(--fill-hover); }
+    .hdr-more .more-btn { border-radius: 999px; }
+    /* menus & dropdown lists: floating glass */
+    .more-menu, .cs-list { background: rgba(255,255,255,.96) !important; -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); border-radius: 18px !important; box-shadow: var(--lift), inset 0 1px 0 rgba(255,255,255,.95) !important; padding: 6px !important; }
+    .more-menu .mm-sec + .mm-sec { border-top-color: var(--hair); }
+    .more-menu .mm-item, .cs-opt, .tb-pop .tb-check, .tb-pop .tb-mi { border-radius: 11px; }
+    .more-menu .mm-item:hover, .cs-opt:hover, .cs-opt.cs-active, .tb-pop .tb-check:hover { background: var(--fill-hover) !important; }
+    .more-menu .mm-item.act-remove:hover { background: rgba(185,28,28,.08) !important; }
+    .more-menu .pg-sel { background-color: var(--fill) !important; border: 0 !important; border-radius: 999px !important; }
+    .more-menu .swatches .sw { border-color: transparent; }
+    /* page labels = small glass capsules */
+    html[data-theme="tailwind"] .page-num-label { background: var(--glass); -webkit-backdrop-filter: blur(16px) saturate(180%); backdrop-filter: blur(16px) saturate(180%); box-shadow: 0 0 0 .5px rgba(15,23,42,.08), 0 2px 8px rgba(15,23,42,.06); }
+    /* page sheets: same lift as the floating chrome, slightly calmer */
+    .page-frame { border-radius: 10px; box-shadow: 0 0 0 .5px rgba(15,23,42,.08), 0 4px 18px rgba(15,23,42,.08); }
+
+    /* Finder-style list: flat rows, grey = the open/selected row */
+    html[data-theme="tailwind"] .ann-item { background: transparent; border-radius: 12px; margin-bottom: 2px; }
+    html[data-theme="tailwind"] .ann-item:hover { background: rgba(15,23,42,.04); }
+    html[data-theme="tailwind"] .ann-item.open { background: rgba(15,23,42,.07); box-shadow: none; }
+    .ann-item.open .ann-body .dc-edit, .ann-item.open .dc-edit { background: rgba(255,255,255,.75) !important; }
+    .ann-item.open .dc-edit:hover { background: rgba(255,255,255,.9) !important; }
+    .ann-item.open .dc-edit:focus { background: #fff !important; }
+    .ann-item.open .fmt-bar { background: rgba(15,23,42,.06); }
+    .ann-item.open .more-btn:hover, .ann-item.open .more-btn[aria-expanded="true"] { background: rgba(15,23,42,.08); }
   </style>
 </head>
 <body>
