@@ -779,6 +779,10 @@
     .ann-item.deleted .ann-pv { text-decoration: line-through; color: #94a3b8; }
     @media (max-width: 1100px) { header #confirm-hint { display: none; } }
     @media (max-width: 480px) { body.has-results header { position: relative; height: auto; } body.has-results #results-screen.visible { top: 56px; } body.has-results .main-col .pages-panel { padding-top: 16px !important; } body.has-results .results-layout .detail-panel { margin: 12px !important; } }
+
+    /* sidebar shadow must paint above the (positioned) page column, with room on the left too */
+    body.has-results .results-layout .detail-panel { position: relative; z-index: 3; margin: 64px 18px 26px 12px !important; }
+    @media (max-width: 480px) { body.has-results .results-layout .detail-panel { margin: 12px !important; } }
   </style>
 </head>
 <body>
