@@ -808,6 +808,14 @@
     /* double the breathing room around the dividers (10px -> 20px each side) */
     .ann-item .ann-head { padding: 20px 12px; }
     .ann-item.open .ann-head { padding: 14px 12px 10px; }
+
+    /* sidebar runs full height; the header stops at its left edge */
+    body.has-results header { right: 320px; }
+    body.has-results .results-layout .detail-panel { margin: 0 !important; padding-top: 22px; }
+    .ann-item::after { display: none !important; }
+    .ann-item .ann-head { padding: 14px 12px; }
+    .ann-item.open .ann-head { padding: 14px 12px 10px; }
+    @media (max-width: 480px) { body.has-results header { right: 0; } body.has-results .results-layout .detail-panel { padding-top: 18px; } }
   </style>
 </head>
 <body>
