@@ -749,6 +749,36 @@
     .ann-item.open .dc-edit:focus { background: #fff !important; }
     .ann-item.open .fmt-bar { background: rgba(15,23,42,.06); }
     .ann-item.open .more-btn:hover, .ann-item.open .more-btn[aria-expanded="true"] { background: rgba(15,23,42,.08); }
+
+    /* ===================== Top bar + white layout (final) ===================== */
+    body.has-results, body.has-results #results-screen, body.has-results .main-col, body.has-results .pages-panel, html[data-theme="tailwind"] body.has-results .pages-panel { background: #fff !important; }
+    body.has-results header { position: fixed; top: 0; left: 0; right: 0; z-index: 40; height: 56px; box-sizing: border-box; padding: 8px 20px !important; background: transparent !important; border-bottom: 0 !important; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; }
+    body.has-results header .header-actions, body.has-results header .header-icon { pointer-events: auto; }
+    body.has-results header .header-icon { left: 20px; top: 8px; transform: none; height: 26px; width: 26px; padding: 7px; box-sizing: content-box; border-radius: 999px; background: rgba(255,255,255,.9); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); box-shadow: 0 0 0 .5px rgba(15,23,42,.07), 0 1px 1px rgba(15,23,42,.04), 0 8px 22px rgba(15,23,42,.10), inset 0 1px 0 rgba(255,255,255,.95); }
+    header .header-actions { gap: 10px; }
+    header #toolbar { display: flex; align-items: center; gap: 10px; position: static !important; background: none !important; padding: 0 !important; min-height: 0 !important; pointer-events: auto; }
+    header .cap { height: 40px; background: rgba(255,255,255,.9); }
+    header .cap .cl-btn { height: 32px !important; }
+    header #confirm-hint:empty { display: none; }
+    header #confirm-hint { display: flex; align-items: center; height: 40px; box-sizing: border-box; padding: 0 16px; border-radius: 999px; background: rgba(255,255,255,.9); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); box-shadow: 0 0 0 .5px rgba(15,23,42,.07), 0 1px 1px rgba(15,23,42,.04), 0 8px 22px rgba(15,23,42,.10), inset 0 1px 0 rgba(255,255,255,.95); font-weight: 600; color: #475569; }
+    header #confirm-btn { height: 40px; box-shadow: 0 0 0 .5px rgba(68,73,242,.6), 0 8px 20px rgba(68,73,242,.32) !important; }
+    body.has-results #results-screen.visible { top: 0; }
+    body.has-results .main-col .pages-panel { padding-top: 84px !important; }
+    body.has-results .results-layout .detail-panel { margin: 64px 18px 26px 0 !important; background: #fff !important; border-radius: 26px; box-shadow: 0 0 0 .5px rgba(15,23,42,.09), 0 1px 1px rgba(15,23,42,.04), 0 10px 28px rgba(15,23,42,.12) !important; }
+    body.has-results .page-frame { box-shadow: 0 0 0 .5px rgba(15,23,42,.12), 0 2px 10px rgba(15,23,42,.06) !important; }
+    html[data-theme="tailwind"] body.has-results .page-num-label { background: rgba(15,23,42,.05); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+    .mm-sep { height: 1px; background: rgba(15,23,42,.08); margin: 4px 6px; }
+    .more-menu .tb-mi { text-align: left; }
+    /* reference rows: number + the annotation text */
+    .ann-item .ann-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; padding: 0; }
+    .ann-pv { flex: 1; min-width: 0; font-size: .8rem; line-height: 1.4; font-weight: 500; color: #1e293b; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .ann-item.open .ann-pv { display: none; }
+    .ann-item.open .ann-head { justify-content: space-between; }
+    .ann-item .ann-head { align-items: flex-start; }
+    .ann-item .ann-head .ann-chevron { margin-top: 4px; }
+    .ann-item.deleted .ann-pv { text-decoration: line-through; color: #94a3b8; }
+    @media (max-width: 1100px) { header #confirm-hint { display: none; } }
+    @media (max-width: 480px) { body.has-results header { position: relative; height: auto; } body.has-results #results-screen.visible { top: 56px; } body.has-results .main-col .pages-panel { padding-top: 16px !important; } body.has-results .results-layout .detail-panel { margin: 12px !important; } }
   </style>
 </head>
 <body>
@@ -794,38 +824,7 @@
 </defs>
 </svg>
   <div class="header-actions" id="header-actions" hidden>
-    <span class="confirm-hint" id="confirm-hint"></span>
-    <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
-      </svg>
-      <span id="confirm-btn-label">Download PDF</span>
-    </button>
-    <div class="hdr-more">
-      <button type="button" class="more-btn" id="hdr-more-btn" aria-haspopup="true" aria-expanded="false" aria-label="More options" title="More"><svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4.5" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="15.5" cy="10" r="1.6"/></svg></button>
-      <div class="more-menu" role="menu" hidden>
-        <div class="mm-sec mm-actions">
-          <button type="button" class="mm-item" id="mm-rerun" role="menuitem" hidden></button>
-          <button type="button" class="mm-item" id="mm-new" role="menuitem">Process another PDF</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</header>
-
-<div class="dl-status" id="dl-status" role="status" aria-live="polite">
-  <span class="dl-spin"></span>
-  <span><span id="dl-text"></span><span class="dl-sub" id="dl-sub"></span></span>
-  <button type="button" class="dl-x" id="dl-x" aria-label="Dismiss" onclick="dlHide()">×</button>
-</div>
-
-<!-- ── Results screen ── -->
-<div id="lost-bar" role="alert"><span>The server no longer has this review (it was restarted or timed out). Your edits are still on this page: save them as a data file before you leave.</span><button type="button" id="lost-save">Save my review data</button></div>
-<div id="results-screen" class="visible">
-  <div class="results-layout">
-  <div class="main-col">
-  <div class="toolbar" id="toolbar" role="toolbar" aria-label="Review actions">
-    <div class="tb-group">
+    <div class="tb-group" id="toolbar" role="toolbar" aria-label="Review actions">
       <div class="tb-menuwrap">
         <div class="cap"><button type="button" class="cl-btn more-btn tb-addmenu" id="add-menu-btn" aria-haspopup="true" aria-expanded="false" disabled title="Add an annotation or a box"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span id="add-menu-lbl">Add</span><svg class="add-caret" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg></button></div>
         <div class="more-menu tb-pop" id="add-menu" role="menu" hidden>
@@ -835,8 +834,6 @@
           </div>
         </div>
       </div>
-    </div>
-    <div class="tb-group tb-right">
       <div class="cap"><button type="button" class="cl-btn" data-act="undo" id="undo-btn" disabled title="Undo (Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
       <span class="tb-sep" aria-hidden="true"></span>
       <button type="button" class="cl-btn" data-act="redo" id="redo-btn" disabled title="Redo (Shift+Ctrl/Cmd+Z)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>Redo</button></div>
@@ -854,11 +851,35 @@
             <div id="conf-colors"><label class="conf-switch tb-check mm-item" title="Preview the pin colors that will be in the exported PDF"><span>Show export pin colors</span><input type="checkbox" id="conf-colors-cb" role="switch"></label></div>
             <label class="conf-switch tb-check mm-item" id="box-incl-row" hidden><span id="box-incl-text">Include boxes from the original</span><input type="checkbox" id="box-incl-cb" role="switch"></label>
             <button type="button" class="mm-item tb-mi" role="menuitem" data-act="toggle-orig" id="orig-btn" disabled title="Show or hide the original pages"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span id="orig-btn-lbl">Hide original</span></button>
+            <div class="mm-sep" role="separator"></div>
+            <button type="button" class="mm-item tb-mi" id="mm-rerun" role="menuitem" hidden></button>
+            <button type="button" class="mm-item tb-mi" id="mm-new" role="menuitem">Process another PDF</button>
           </div>
         </div>
       </div>
     </div>
+    <span class="confirm-hint" id="confirm-hint"></span>
+    <button class="confirm-btn" id="confirm-btn" onclick="confirmAndDownload()">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12h12"/>
+      </svg>
+      <span id="confirm-btn-label">Download PDF</span>
+    </button>
   </div>
+</header>
+
+<div class="dl-status" id="dl-status" role="status" aria-live="polite">
+  <span class="dl-spin"></span>
+  <span><span id="dl-text"></span><span class="dl-sub" id="dl-sub"></span></span>
+  <button type="button" class="dl-x" id="dl-x" aria-label="Dismiss" onclick="dlHide()">×</button>
+</div>
+
+<!-- ── Results screen ── -->
+<div id="lost-bar" role="alert"><span>The server no longer has this review (it was restarted or timed out). Your edits are still on this page: save them as a data file before you leave.</span><button type="button" id="lost-save">Save my review data</button></div>
+<div id="results-screen" class="visible">
+  <div class="results-layout">
+  <div class="main-col">
+
 
     <!-- Page previews -->
     <div class="pages-panel" id="pages-panel">
@@ -1310,7 +1331,7 @@
     });
   }
 
-  document.getElementById('results-screen').addEventListener('click', ev => {
+  const onAct = ev => {
     const b = ev.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act;
@@ -1322,9 +1343,11 @@
     else if (act === 'add-pin') setPinMode(!pinMode);
     else if (act === 'undo') histUndo();
     else if (act === 'redo') histRedo();
-  });
+  };
+  document.getElementById('results-screen').addEventListener('click', onAct);
+  document.querySelector('header').addEventListener('click', onAct);
   window.addEventListener('resize', () => { clearTimeout(window._rzT); window._rzT = setTimeout(refreshImages, 250); });
-  function toolbarEnable(on) { document.querySelectorAll('#toolbar .tb-group button, .col-labels .cl-btn').forEach(b => b.disabled = !on); if (on) document.querySelector('[data-act="zoom-out"]').disabled = true; histUI(); }
+  function toolbarEnable(on) { document.querySelectorAll('#toolbar button, .col-labels .cl-btn').forEach(b => b.disabled = !on); if (on) document.querySelector('[data-act="zoom-out"]').disabled = true; histUI(); }
   try { if (localStorage.getItem('carryover.origCollapsed') === '1') { document.getElementById('pages-panel').classList.add('orig-collapsed'); } } catch (e) {}
   syncOrigBtn();
 
@@ -1337,12 +1360,7 @@
     b.onclick = () => { closeMoreMenus(); pendingOverride = { from: lastMode, to: deriv ? 'update' : 'derivative', stage: 'review' }; resetForm(true); autoTries = 0; submitJob(deriv ? 'update' : 'derivative'); };
     b.hidden = false;
   }
-  (function () {
-    const btn = document.getElementById('hdr-more-btn'), menu = btn.parentNode.querySelector('.more-menu');
-    btn.addEventListener('click', ev => { ev.stopPropagation(); const was = !menu.hidden; closeMoreMenus(); if (!was) openMoreMenu(btn, menu); });
-    menu.addEventListener('click', ev => ev.stopPropagation());
-    document.getElementById('mm-new').addEventListener('click', () => { closeMoreMenus(); resetForm(); });
-  })();
+  document.getElementById('mm-new').addEventListener('click', () => { closeMoreMenus(); resetForm(); });
   function showResults(results) {
     setBusy(false); cancelCtl = null; window._resultsAt = Date.now(); window._results = results;
     deletedIndices = new Set();
@@ -2022,6 +2040,7 @@
       <button type="button" class="ann-head" aria-expanded="false" aria-controls="${bodyId}">
         <span class="num-dot${String(a.number).length > 2 ? ' n3' : ''}">${esc(a.number == null ? '–' : a.number)}</span>
         ${extra.length ? `<span class="loc-chip">${extra.length + 1} places</span>` : ''}
+        <span class="ann-pv"></span>
         <span class="badge ann-status"></span>
         <svg class="ann-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5l5 5 5-5"/></svg>
       </button>
@@ -2086,6 +2105,7 @@
     fillPageSelect(psel, idx);
     enhanceSelect(psel, 'page');
     item.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => setPinColor(idx, b.dataset.c)));
+    item.querySelector('.dc-edit').addEventListener('input', () => { const pv = item.querySelector('.ann-pv'); if (pv) pv.textContent = (item.querySelector('.dc-edit').innerText || '').trim() || 'No reference yet'; });
     item.querySelector('.act-remove').addEventListener('click', () => { closeMoreMenus(); toggleDelete(idx, a.index); });
     item.querySelector('.act-reset').addEventListener('click', () => { closeMoreMenus(); resetPosition(idx); });
     { const mb = item.querySelector('.more-btn'), mm = item.querySelector('.more-menu');
@@ -2217,6 +2237,7 @@
     badge.className = 'badge ann-status ' + state;
     badge.textContent = label;
     item.classList.toggle('deleted', removed);
+    { const ed = item.querySelector('.dc-edit'), pv = item.querySelector('.ann-pv'); if (ed && pv) { pv.textContent = (ed.innerText || '').trim() || 'No reference yet'; pv.title = label; } }
     item.dataset.bucket = (state === 'deleted' || state === 'content_removed') ? 'removed' : state === 'needs_look' ? 'review' : 'moved';
     const dot = item.querySelector('.num-dot');
     STATES.forEach(c => dot.classList.remove(c)); dot.classList.add(state);
