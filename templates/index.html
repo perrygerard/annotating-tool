@@ -816,6 +816,10 @@
     .ann-item .ann-head { padding: 14px 12px; }
     .ann-item.open .ann-head { padding: 14px 12px 10px; }
     @media (max-width: 480px) { body.has-results header { right: 0; } body.has-results .results-layout .detail-panel { padding-top: 18px; } }
+
+    /* status text next to Confirm removed (element kept so the script can still update it) */
+    header #confirm-hint { display: none !important; }
+    .filtered-out { display: none !important; }
   </style>
 </head>
 <body>
@@ -1987,6 +1991,8 @@
     items.forEach(it => {
       it.hidden = (activeFilter !== 'all' && it.dataset.bucket !== activeFilter) || !matchesSearch(it, q);
       if (!it.hidden) shown++;
+      const fo = activeFilter !== 'all' && it.dataset.bucket !== activeFilter;
+      groupOf(Number(it.dataset.idx)).forEach(m => [m.e.newRectEl, m.e.oldRectEl].forEach(el => el && el.classList && el.classList.toggle('filtered-out', fo)));
     });
     const none = document.getElementById('ref-none');
     if (none) { none.hidden = !(items.length && !shown); none.textContent = (q.length || q.pages.length) ? 'No references match “' + document.getElementById('ref-search').value.trim() + '”.' : 'Nothing in this filter.'; }
