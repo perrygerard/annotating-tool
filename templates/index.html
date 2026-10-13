@@ -783,6 +783,31 @@
     /* sidebar shadow must paint above the (positioned) page column, with room on the left too */
     body.has-results .results-layout .detail-panel { position: relative; z-index: 3; margin: 64px 18px 26px 12px !important; }
     @media (max-width: 480px) { body.has-results .results-layout .detail-panel { margin: 12px !important; } }
+
+    /* flat sidebar: full-height panel under the header, hairline on its left */
+    body.has-results .results-layout .detail-panel { margin: 56px 0 0 0 !important; border-radius: 0 !important; box-shadow: none !important; border-left: .5px solid rgba(15,23,42,.12); background: #fff !important; }
+    @media (max-width: 480px) { body.has-results .results-layout .detail-panel { margin: 0 !important; border-left: 0; } }
+
+    /* header: solid white bar + hairline, flat grey controls (matches the chosen option) */
+    body.has-results header { background: #fff !important; border-bottom: .5px solid rgba(15,23,42,.1) !important; pointer-events: auto; padding: 10px 20px !important; }
+    body.has-results header .header-icon { left: 20px; top: 50%; transform: translateY(-50%); height: 26px; width: auto; padding: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+    header .cap { height: 36px; background: rgba(15,23,42,.05); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0 3px; }
+    header .cap .cl-btn { height: 30px !important; }
+    header .cap .zoom-group .cl-btn.icon { width: 26px !important; height: 26px !important; background: rgba(15,23,42,.06) !important; }
+    header .cap .tb-dots { width: 34px !important; }
+    header .cap .tb-addmenu { padding: 0 10px 0 12px !important; }
+    header #confirm-hint { height: auto; padding: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; font-weight: 500; color: var(--ink-light); font-size: .8rem; }
+    header #confirm-btn { height: auto; box-shadow: 0 1px 2px rgb(15 23 42 / .2) !important; }
+    body.has-results .main-col .pages-panel { padding-top: 80px !important; }
+
+    /* hairline between references */
+    html[data-theme="tailwind"] .ann-item { position: relative; margin-bottom: 0; }
+    .ann-item:not(:last-child)::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 1px; background: rgba(15,23,42,.08); pointer-events: none; }
+    .ann-item.open::after, .ann-item:has(+ .ann-item.open)::after { opacity: 0; }
+
+    /* double the breathing room around the dividers (10px -> 20px each side) */
+    .ann-item .ann-head { padding: 20px 12px; }
+    .ann-item.open .ann-head { padding: 14px 12px 10px; }
   </style>
 </head>
 <body>
